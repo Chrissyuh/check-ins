@@ -284,6 +284,43 @@ function barClass(tone) {
   return "bg-emerald-500";
 }
 
+function getFaviconStatus(stats) {
+  if (stats.overMax > 0) return "over-max";
+  if (stats.due > 0) return "due";
+  return "fresh";
+}
+
+function getFaviconColor(status) {
+  if (status === "over-max") return "#dc2626";
+  if (status === "due") return "#d97706";
+  return "#0f172a";
+}
+
+function createFaviconDataUrl(status) {
+  const color = getFaviconColor(status);
+  const cacheKey = currentTimestamp();
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- ${status}:${cacheKey} -->
+  <rect width="64" height="64" rx="18" fill="#f5f5f4"/>
+  <circle cx="32" cy="32" r="14" fill="${color}"/>
+</svg>`;
+
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+function getDocumentTitle(stats) {
+  if (stats.overMax > 0) {
+    return `● ${stats.overMax} ${stats.overMax === 1 ? "over max" : "over max"} — Check-ins`;
+  }
+
+  if (stats.due > 0) {
+    return `● ${stats.due} ${stats.due === 1 ? "due" : "due"} — Check-ins`;
+  }
+
+  return "Check-ins";
+}
+
 function runSanityTests() {
   if (typeof window === "undefined" || window.__checkInTestsRan) return;
 
@@ -518,6 +555,21 @@ export default function App() {
       logs: items.reduce((sum, item) => sum + item.log.length, 0),
     };
   }, [items, now]);
+
+  useEffect(() => {
+    const rel = 'link[rel="icon"]';
+    let iconLink = document.querySelector(rel);
+
+    if (!iconLink) {
+      iconLink = document.createElement("link");
+      iconLink.setAttribute("rel", "icon");
+      document.head.appendChild(iconLink);
+    }
+
+    iconLink.setAttribute("type", "image/svg+xml");
+    iconLink.setAttribute("href", createFaviconDataUrl(getFaviconStatus(stats)));
+    document.title = getDocumentTitle(stats);
+  }, [stats]);
 
   async function requestAlerts() {
     if (!("Notification" in window)) {
@@ -1381,6 +1433,16 @@ function OnboardingModal({ onClose }) {
           </p>
         </div>
         <p>Each item has a 30 minute cooldown on check-ins.</p>
+        <div className="rounded-xl border border-stone-200 bg-white p-3 text-sm text-stone-600">
+          <p>
+            Pin this tab to keep Check-ins visible. The favicon dot changes color
+            when projects become due or over max.
+          </p>
+          <p className="mt-2 text-stone-500">
+            This only updates while the page is open. Browsers may pause inactive
+            tabs, and closed tabs cannot run reminders.
+          </p>
+        </div>
         <button
           type="button"
           onClick={onClose}
@@ -1452,10 +1514,20 @@ function SettingsModal({
 
         <section className="rounded-xl border border-stone-200 p-3">
           <h3 className="text-sm font-semibold">Help</h3>
+          <div className="mt-2 rounded-lg bg-stone-50 p-3 text-sm text-stone-600">
+            <p>
+              Pin this tab to keep Check-ins visible. The favicon dot changes color
+              when projects become due or over max.
+            </p>
+            <p className="mt-2 text-stone-500">
+              This only updates while the page is open. Browsers may pause inactive
+              tabs, and closed tabs cannot run reminders.
+            </p>
+          </div>
           <button
             type="button"
             onClick={onShowOnboarding}
-            className="mt-2 rounded-lg border border-stone-200 px-3 py-1.5 text-sm font-medium hover:bg-stone-100"
+            className="mt-3 rounded-lg border border-stone-200 px-3 py-1.5 text-sm font-medium hover:bg-stone-100"
           >
             Show onboarding
           </button>

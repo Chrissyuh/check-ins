@@ -13,6 +13,7 @@ const defaultForm = {
   name: "",
   targetAmount: 2,
   targetUnit: "days",
+  maxEnabled: true,
   maxAmount: 5,
   maxUnit: "days",
 };
@@ -175,25 +176,44 @@ function createFormState(item) {
     name: item.name,
     targetAmount: item.targetAmount,
     targetUnit: item.targetUnit,
-    maxAmount: item.maxAmount,
+    maxEnabled: item.maxEnabled !== false,
+    maxAmount: item.maxAmount ?? defaultForm.maxAmount,
     maxUnit: item.maxUnit,
   };
 }
 
 function withComputedDurations(form) {
   const targetAmount = Number(form.targetAmount);
-  const maxAmount = Number(form.maxAmount);
   const targetMs = unitsToMs(targetAmount, form.targetUnit);
-  const maxMs = Math.max(unitsToMs(maxAmount, form.maxUnit), targetMs);
+  const maxEnabled = form.maxEnabled !== false;
+  const maxAmount = Number(form.maxAmount);
+  const maxMs = maxEnabled ? unitsToMs(maxAmount, form.maxUnit) : null;
 
   return {
     ...form,
     name: form.name.trim(),
     targetAmount,
+    maxEnabled,
     maxAmount,
     targetMs,
     maxMs,
   };
+}
+
+function getFormError(form) {
+  if (!form.name.trim()) return "Name is required.";
+
+  const targetMs = unitsToMs(form.targetAmount, form.targetUnit);
+  if (targetMs <= 0) return "Target gap must be at least 1 day.";
+
+  if (form.maxEnabled === false) return "";
+
+  const maxMs = unitsToMs(form.maxAmount, form.maxUnit);
+  if (maxMs <= targetMs) {
+    return "Max gap must be longer than the target gap.";
+  }
+
+  return "";
 }
 
 function makeItem(form) {
@@ -205,38 +225,47 @@ function makeItem(form) {
     ...normalized,
     createdAt: now,
     lastCheckedAt: now,
-    log: [now],
+    log: [],
   };
 }
 
 function normalizeItem(item) {
   const targetMs = item.targetMs ?? unitsToMs(item.targetAmount, item.targetUnit);
-  const maxMs = Math.max(
-    item.maxMs ?? unitsToMs(item.maxAmount, item.maxUnit),
-    targetMs
-  );
-  const log = sortLog(
-    Array.isArray(item.log) ? item.log : [item.lastCheckedAt ?? Date.now()]
-  );
+  const maxEnabled = item.maxEnabled !== false && Number.isFinite(item.maxAmount);
+  const maxMs = maxEnabled
+    ? item.maxMs ?? unitsToMs(item.maxAmount, item.maxUnit)
+    : null;
+  const log = sortLog(Array.isArray(item.log) ? item.log : []);
+  const lastCheckedAt = log[0] ?? item.lastCheckedAt ?? item.createdAt ?? Date.now();
 
-  return { ...item, targetMs, maxMs, log, lastCheckedAt: log[0] ?? Date.now() };
+  return {
+    ...item,
+    maxEnabled,
+    maxAmount: item.maxAmount ?? defaultForm.maxAmount,
+    targetMs,
+    maxMs,
+    log,
+    lastCheckedAt,
+  };
 }
 
 function getStatus(item, now) {
   const elapsed = now - item.lastCheckedAt;
   const targetRemaining = item.targetMs - elapsed;
-  const maxRemaining = item.maxMs - elapsed;
+  const hasMax = item.maxEnabled !== false && item.maxMs != null;
+  const maxRemaining = hasMax ? item.maxMs - elapsed : Infinity;
   const targetProgress = item.targetMs > 0 ? elapsed / item.targetMs : 1;
-  const maxProgress = item.maxMs > 0 ? elapsed / item.maxMs : 1;
-  const isOverMax = elapsed >= item.maxMs;
+  const maxProgress = hasMax && item.maxMs > 0 ? elapsed / item.maxMs : targetProgress;
+  const isOverMax = hasMax ? elapsed >= item.maxMs : false;
   const isDue = elapsed >= item.targetMs;
-  const canCheckIn = elapsed >= COOLDOWN_MS;
+  const hasCheckIns = Array.isArray(item.log) && item.log.length > 0;
+  const canCheckIn = !hasCheckIns || elapsed >= COOLDOWN_MS;
 
   let label = "Fresh";
   let tone = "fresh";
   let alertLevel = "fresh";
   let targetText = `${formatDuration(targetRemaining)} until target`;
-  let maxText = `${formatDuration(maxRemaining)} until max`;
+  let maxText = hasMax ? `${formatDuration(maxRemaining)} until max` : "Max gap disabled";
 
   if (isOverMax) {
     label = "Over max";
@@ -265,16 +294,17 @@ function getStatus(item, now) {
     label,
     tone,
     alertLevel,
+    hasCheckIns,
     targetText,
     maxText,
   };
 }
 
 function toneClass(tone) {
-  if (tone === "danger") return "border-red-200 bg-red-50 text-red-700";
-  if (tone === "due") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (tone === "soon") return "border-yellow-200 bg-yellow-50 text-yellow-800";
-  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (tone === "danger") return "text-red-700";
+  if (tone === "due") return "text-amber-700";
+  if (tone === "soon") return "text-yellow-700";
+  return "text-emerald-700";
 }
 
 function barClass(tone) {
@@ -346,6 +376,25 @@ function runSanityTests() {
     getStatus(fake, base + 3 * 3600000).isOverMax === true,
     "over max status works"
   );
+  console.assert(
+    getStatus({ ...fake, maxEnabled: false, maxMs: null }, base + 3 * 3600000).isOverMax === false,
+    "disabled max never becomes over max"
+  );
+  console.assert(
+    getStatus({ ...fake, createdAt: base, lastCheckedAt: base, log: [] }, base).canCheckIn === true,
+    "new item can check in immediately"
+  );
+  console.assert(
+    getFormError({
+      name: "test",
+      targetAmount: 2,
+      targetUnit: "days",
+      maxEnabled: true,
+      maxAmount: 2,
+      maxUnit: "days",
+    }) === "Max gap must be longer than the target gap.",
+    "max gap must be greater than target"
+  );
 }
 
 function getInitialItems() {
@@ -409,8 +458,8 @@ function ItemMeta({ stats }) {
 function TargetSummary({ item }) {
   return (
     <p className="mt-0.5 text-sm text-stone-500">
-      Target gap: {item.targetAmount} {item.targetUnit} | Max gap: {item.maxAmount}{" "}
-      {item.maxUnit}
+      Target gap: {item.targetAmount} {item.targetUnit} | Max gap:{" "}
+      {item.maxEnabled === false ? "Off" : `${item.maxAmount} ${item.maxUnit}`}
     </p>
   );
 }
@@ -614,7 +663,7 @@ export default function App() {
 
   function addItem(event) {
     event.preventDefault();
-    if (!form.name.trim()) return;
+    if (getFormError(form)) return;
 
     setItems((current) => [makeItem(form), ...current]);
     setForm(defaultForm);
@@ -665,7 +714,7 @@ export default function App() {
   }
 
   function saveEdit(id) {
-    if (!editForm.name.trim()) return;
+    if (getFormError(editForm)) return;
 
     const normalized = withComputedDurations(editForm);
 
@@ -951,62 +1000,83 @@ function EmptyState({ showAdd, onAdd }) {
 
 function ItemForm({ form, setForm, onSubmit, submitText, submitIcon }) {
   const SubmitIcon = submitIcon === "save" ? I.save : I.plus;
+  const formError = getFormError(form);
+  const hasMax = form.maxEnabled !== false;
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr_auto] lg:items-end"
-    >
-      <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-stone-700">Item</span>
-        <input
-          value={form.name}
-          onChange={(event) => setForm({ ...form, name: event.target.value })}
-          placeholder="Exercise, reading, project work..."
-          className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 outline-none focus:border-stone-500"
+    <form onSubmit={onSubmit} className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr_auto] lg:items-end">
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-stone-700">Item</span>
+          <input
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+            placeholder="Exercise, reading, project work..."
+            className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 outline-none focus:border-stone-500"
+          />
+        </label>
+        <DurationInput
+          label="Target gap"
+          amount={form.targetAmount}
+          unit={form.targetUnit}
+          onAmount={(value) => setForm({ ...form, targetAmount: value })}
+          onUnit={(value) => setForm({ ...form, targetUnit: value })}
         />
-      </label>
-      <DurationInput
-        label="Target gap"
-        amount={form.targetAmount}
-        unit={form.targetUnit}
-        onAmount={(value) => setForm({ ...form, targetAmount: value })}
-        onUnit={(value) => setForm({ ...form, targetUnit: value })}
-      />
-      <DurationInput
-        label="Max gap"
-        amount={form.maxAmount}
-        unit={form.maxUnit}
-        onAmount={(value) => setForm({ ...form, maxAmount: value })}
-        onUnit={(value) => setForm({ ...form, maxUnit: value })}
-      />
-      <button
-        type="submit"
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-stone-900 px-4 text-sm font-semibold text-white hover:bg-stone-700"
-      >
-        <SubmitIcon size={16} />
-        {submitText}
-      </button>
+        <div className="space-y-2">
+          <label className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              checked={hasMax}
+              onChange={(event) =>
+                setForm({ ...form, maxEnabled: event.target.checked })
+              }
+              className="h-3.5 w-3.5 rounded border-stone-300 text-stone-900 focus:ring-0"
+            />
+            <span className="font-medium">Max gap</span>
+          </label>
+          <DurationInput
+            label={hasMax ? "Max gap" : "Max gap disabled"}
+            amount={form.maxAmount}
+            unit={form.maxUnit}
+            disabled={!hasMax}
+            onAmount={(value) => setForm({ ...form, maxAmount: value })}
+            onUnit={(value) => setForm({ ...form, maxUnit: value })}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={Boolean(formError)}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-stone-900 px-4 text-sm font-semibold text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-300"
+        >
+          <SubmitIcon size={16} />
+          {submitText}
+        </button>
+      </div>
+      {formError && (
+        <p className="text-sm text-red-700">{formError}</p>
+      )}
     </form>
   );
 }
 
-function DurationInput({ label, amount, unit, onAmount, onUnit }) {
+function DurationInput({ label, amount, unit, disabled = false, onAmount, onUnit }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-stone-700">{label}</span>
-      <div className="grid grid-cols-[1fr_auto] overflow-hidden rounded-xl border border-stone-300 bg-white focus-within:border-stone-500">
+      <span className={`mb-1.5 block text-sm font-medium ${disabled ? "text-stone-400" : "text-stone-700"}`}>{label}</span>
+      <div className={`grid grid-cols-[1fr_auto] overflow-hidden rounded-xl border ${disabled ? "border-stone-200 bg-stone-50" : "border-stone-300 bg-white focus-within:border-stone-500"}`}>
         <input
           type="number"
           min="1"
           value={amount}
+          disabled={disabled}
           onChange={(event) => onAmount(event.target.value)}
-          className="min-w-0 bg-transparent px-3 py-2 outline-none"
+          className="min-w-0 bg-transparent px-3 py-2 outline-none disabled:text-stone-400"
         />
         <select
           value={unit}
+          disabled={disabled}
           onChange={(event) => onUnit(event.target.value)}
-          className="border-l border-stone-300 bg-stone-50 px-2 outline-none"
+          className="border-l border-stone-300 bg-stone-50 px-2 outline-none disabled:border-stone-200 disabled:text-stone-400"
         >
           <option value="days">days</option>
           <option value="weeks">weeks</option>
@@ -1038,7 +1108,7 @@ function ItemCard({
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const status = getStatus(item, now);
-  const maxAt = item.lastCheckedAt + item.maxMs;
+  const maxAt = item.maxEnabled === false || item.maxMs == null ? null : item.lastCheckedAt + item.maxMs;
   const targetAt = item.lastCheckedAt + item.targetMs;
   const retroMax = toDateTimeLocalValue(now);
 
@@ -1083,11 +1153,7 @@ function ItemCard({
             <h2 className="text-xl font-bold">{item.name}</h2>
             <TargetSummary item={item} />
           </div>
-          <div
-            className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(
-              status.tone
-            )}`}
-          >
+          <div className={`shrink-0 pt-0.5 text-sm font-semibold ${toneClass(status.tone)}`}>
             {status.label}
           </div>
         </div>
@@ -1095,7 +1161,7 @@ function ItemCard({
         <div className="mt-4">
           <div className="mb-1.5 flex justify-between gap-3 text-sm">
             <span className="font-medium text-stone-800">
-              {formatDuration(status.elapsed)} since last check-in
+              {formatDuration(status.elapsed)} since {status.hasCheckIns ? "last check-in" : "created"}
             </span>
             <span className="text-stone-500">{status.maxText}</span>
           </div>
@@ -1108,7 +1174,7 @@ function ItemCard({
           </div>
           <div className="mt-1.5 flex justify-between text-xs text-stone-500">
             <span>{status.targetText}</span>
-            <span>Max: {formatDateTime(maxAt)}</span>
+            <span>{maxAt == null ? "No max gap" : `Max: ${formatDateTime(maxAt)}`}</span>
           </div>
         </div>
 
@@ -1117,8 +1183,8 @@ function ItemCard({
             <I.clock size={15} /> Target: {formatDateTime(targetAt)}
           </div>
           <div>
-            {status.isOverMax ? <I.warn size={15} /> : <I.clock size={15} />} Last check-in:{" "}
-            {formatDateTime(item.lastCheckedAt)}
+            {status.isOverMax ? <I.warn size={15} /> : <I.clock size={15} />}{" "}
+            {status.hasCheckIns ? `Last check-in: ${formatDateTime(item.lastCheckedAt)}` : `Created: ${formatDateTime(item.createdAt)}`}
           </div>
         </div>
 

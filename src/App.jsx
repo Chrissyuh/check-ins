@@ -980,6 +980,7 @@ function AddPanel({ form, setForm, onSubmit, onClose }) {
         onSubmit={onSubmit}
         submitText="Add item"
         submitIcon="plus"
+        suppressErrorText
       />
     </motion.section>
   );
@@ -1009,6 +1010,7 @@ function ItemForm({
   onSubmit,
   submitText,
   submitIcon,
+  suppressErrorText = false,
 }) {
   const SubmitIcon = submitIcon === "save" ? I.save : I.plus;
   const formError = getFormError(form);
@@ -1040,12 +1042,7 @@ function ItemForm({
 
           <div className="rounded-2xl border border-stone-200 bg-white p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-stone-700">Max gap</p>
-                <p className="text-xs text-stone-500">
-                  Longest allowed gap before the item turns critical.
-                </p>
-              </div>
+              <p className="text-sm font-medium text-stone-700">Max gap</p>
               <label className="inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-700">
                 <input
                   type="checkbox"
@@ -1070,8 +1067,7 @@ function ItemForm({
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-stone-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-stone-500">New items start un-checked in.</p>
+      <div className="flex justify-end border-t border-stone-200 pt-4">
         <button
           type="submit"
           disabled={Boolean(formError)}
@@ -1081,7 +1077,7 @@ function ItemForm({
           {submitText}
         </button>
       </div>
-      {formError && (
+      {!suppressErrorText && formError && (
         <p className="text-sm text-red-700">{formError}</p>
       )}
     </form>

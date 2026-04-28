@@ -1056,7 +1056,7 @@ function ItemForm({
               </label>
             </div>
             <DurationInput
-              label={hasMax ? "Longest allowed gap" : "Max gap disabled"}
+              label={hasMax ? "" : "Max gap disabled"}
               amount={form.maxAmount}
               unit={form.maxUnit}
               disabled={!hasMax}
@@ -1087,9 +1087,11 @@ function ItemForm({
 function DurationInput({ label, amount, unit, disabled = false, onAmount, onUnit }) {
   return (
     <label className="block">
-      <span className={`mb-1.5 block text-sm font-medium ${disabled ? "text-stone-400" : "text-stone-700"}`}>
-        {label}
-      </span>
+      {label && (
+        <span className={`mb-1.5 block text-sm font-medium ${disabled ? "text-stone-400" : "text-stone-700"}`}>
+          {label}
+        </span>
+      )}
       <div
         className={`grid grid-cols-[1fr_auto] overflow-hidden rounded-2xl border ${
           disabled

@@ -1031,8 +1031,14 @@ function ItemForm({
       <div className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border border-stone-200 bg-white p-3">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-stone-700">Target gap</p>
+              <span className="invisible inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 text-sm">
+                Enabled
+              </span>
+            </div>
             <DurationInput
-              label="Target gap"
+              label=""
               amount={form.targetAmount}
               unit={form.targetUnit}
               onAmount={(value) => setForm({ ...form, targetAmount: value })}

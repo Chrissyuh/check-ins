@@ -216,6 +216,32 @@ function getFormError(form) {
   return "";
 }
 
+function applySpecialCase(value) {
+  if (value === "daily") {
+    return {
+      ...defaultForm,
+      targetAmount: 1,
+      targetUnit: "days",
+      maxEnabled: true,
+      maxAmount: 2,
+      maxUnit: "days",
+    };
+  }
+
+  if (value === "weekly") {
+    return {
+      ...defaultForm,
+      targetAmount: 1,
+      targetUnit: "weeks",
+      maxEnabled: true,
+      maxAmount: 2,
+      maxUnit: "weeks",
+    };
+  }
+
+  return defaultForm;
+}
+
 function makeItem(form) {
   const now = Date.now();
   const normalized = withComputedDurations(form);
@@ -975,6 +1001,7 @@ function AddPanel({ form, setForm, onSubmit, onClose }) {
         onSubmit={onSubmit}
         submitText="Add item"
         submitIcon="plus"
+        showPresets
       />
     </motion.section>
   );
@@ -998,14 +1025,48 @@ function EmptyState({ showAdd, onAdd }) {
   );
 }
 
-function ItemForm({ form, setForm, onSubmit, submitText, submitIcon }) {
+function ItemForm({
+  form,
+  setForm,
+  onSubmit,
+  submitText,
+  submitIcon,
+  showPresets = false,
+}) {
   const SubmitIcon = submitIcon === "save" ? I.save : I.plus;
   const formError = getFormError(form);
   const hasMax = form.maxEnabled !== false;
+  const showErrorText = !showPresets;
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
-      <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr_auto] lg:items-end">
+      {showPresets && (
+        <label className="block lg:max-w-xs">
+          <span className="mb-1.5 block text-sm font-medium text-stone-700">
+            Special case
+          </span>
+          <select
+            value="custom"
+            onChange={(event) => {
+              const value = event.target.value;
+              if (value !== "custom") {
+                setForm((current) => ({
+                  ...applySpecialCase(value),
+                  name: current.name,
+                }));
+              }
+              event.target.value = "custom";
+            }}
+            className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-stone-500"
+          >
+            <option value="custom">Custom</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </label>
+      )}
+
+      <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr]">
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-stone-700">Item</span>
           <input
@@ -1023,19 +1084,22 @@ function ItemForm({ form, setForm, onSubmit, submitText, submitIcon }) {
           onUnit={(value) => setForm({ ...form, targetUnit: value })}
         />
         <div className="space-y-2">
-          <label className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-sm text-stone-700">
-            <input
-              type="checkbox"
-              checked={hasMax}
-              onChange={(event) =>
-                setForm({ ...form, maxEnabled: event.target.checked })
-              }
-              className="h-3.5 w-3.5 rounded border-stone-300 text-stone-900 focus:ring-0"
-            />
-            <span className="font-medium">Max gap</span>
-          </label>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-stone-700">Max gap</span>
+            <label className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-sm text-stone-700">
+              <input
+                type="checkbox"
+                checked={hasMax}
+                onChange={(event) =>
+                  setForm({ ...form, maxEnabled: event.target.checked })
+                }
+                className="h-3.5 w-3.5 rounded border-stone-300 text-stone-900 focus:ring-0"
+              />
+              <span className="font-medium">Enabled</span>
+            </label>
+          </div>
           <DurationInput
-            label={hasMax ? "Max gap" : "Max gap disabled"}
+            label={hasMax ? "Longest allowed gap" : "Max gap disabled"}
             amount={form.maxAmount}
             unit={form.maxUnit}
             disabled={!hasMax}
@@ -1043,6 +1107,8 @@ function ItemForm({ form, setForm, onSubmit, submitText, submitIcon }) {
             onUnit={(value) => setForm({ ...form, maxUnit: value })}
           />
         </div>
+      </div>
+      <div className="flex justify-end">
         <button
           type="submit"
           disabled={Boolean(formError)}
@@ -1052,9 +1118,7 @@ function ItemForm({ form, setForm, onSubmit, submitText, submitIcon }) {
           {submitText}
         </button>
       </div>
-      {formError && (
-        <p className="text-sm text-red-700">{formError}</p>
-      )}
+      {showErrorText && formError && <p className="text-sm text-red-700">{formError}</p>}
     </form>
   );
 }

@@ -983,10 +983,15 @@ function AddPanel({ form, setForm, onSubmit, onClose }) {
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
-      className="mb-4 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
+      className="mb-4 rounded-3xl border border-stone-200 bg-white p-5 shadow-sm"
     >
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-base font-semibold">Add item</h2>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Add item</h2>
+          <p className="mt-1 text-sm text-stone-500">
+            Set the cadence you want, then track when you actually touch it.
+          </p>
+        </div>
         <button
           type="button"
           onClick={onClose}
@@ -1038,34 +1043,108 @@ function ItemForm({
   const hasMax = form.maxEnabled !== false;
   const showErrorText = !showPresets;
 
+  if (showPresets) {
+    return (
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div className="grid gap-4 lg:grid-cols-[1.6fr_0.9fr]">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-stone-700">Item</span>
+            <input
+              value={form.name}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+              placeholder="Exercise, reading, project work..."
+              className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-stone-500"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-stone-700">
+              Special case
+            </span>
+            <select
+              value="custom"
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value !== "custom") {
+                  setForm((current) => ({
+                    ...applySpecialCase(value),
+                    name: current.name,
+                  }));
+                }
+                event.target.value = "custom";
+              }}
+              className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-stone-500"
+            >
+              <option value="custom">Custom</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-stone-200 bg-white p-3">
+              <DurationInput
+                label="Target gap"
+                amount={form.targetAmount}
+                unit={form.targetUnit}
+                onAmount={(value) => setForm({ ...form, targetAmount: value })}
+                onUnit={(value) => setForm({ ...form, targetUnit: value })}
+              />
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-white p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-stone-700">Max gap</p>
+                  <p className="text-xs text-stone-500">
+                    Longest allowed gap before the item turns critical.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-700">
+                  <input
+                    type="checkbox"
+                    checked={hasMax}
+                    onChange={(event) =>
+                      setForm({ ...form, maxEnabled: event.target.checked })
+                    }
+                    className="h-3.5 w-3.5 rounded border-stone-300 text-stone-900 focus:ring-0"
+                  />
+                  <span className="font-medium">Enabled</span>
+                </label>
+              </div>
+              <DurationInput
+                label={hasMax ? "Longest allowed gap" : "Max gap disabled"}
+                amount={form.maxAmount}
+                unit={form.maxUnit}
+                disabled={!hasMax}
+                onAmount={(value) => setForm({ ...form, maxAmount: value })}
+                onUnit={(value) => setForm({ ...form, maxUnit: value })}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-stone-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-stone-500">
+            New items start un-checked in.
+          </p>
+          <button
+            type="submit"
+            disabled={Boolean(formError)}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-stone-900 px-5 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-300"
+          >
+            <SubmitIcon size={16} />
+            {submitText}
+          </button>
+        </div>
+      </form>
+    );
+  }
+
   return (
     <form onSubmit={onSubmit} className="space-y-3">
-      {showPresets && (
-        <label className="block lg:max-w-xs">
-          <span className="mb-1.5 block text-sm font-medium text-stone-700">
-            Special case
-          </span>
-          <select
-            value="custom"
-            onChange={(event) => {
-              const value = event.target.value;
-              if (value !== "custom") {
-                setForm((current) => ({
-                  ...applySpecialCase(value),
-                  name: current.name,
-                }));
-              }
-              event.target.value = "custom";
-            }}
-            className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-stone-500"
-          >
-            <option value="custom">Custom</option>
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-          </select>
-        </label>
-      )}
-
       <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr]">
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-stone-700">Item</span>
@@ -1126,21 +1205,29 @@ function ItemForm({
 function DurationInput({ label, amount, unit, disabled = false, onAmount, onUnit }) {
   return (
     <label className="block">
-      <span className={`mb-1.5 block text-sm font-medium ${disabled ? "text-stone-400" : "text-stone-700"}`}>{label}</span>
-      <div className={`grid grid-cols-[1fr_auto] overflow-hidden rounded-xl border ${disabled ? "border-stone-200 bg-stone-50" : "border-stone-300 bg-white focus-within:border-stone-500"}`}>
+      <span className={`mb-1.5 block text-sm font-medium ${disabled ? "text-stone-400" : "text-stone-700"}`}>
+        {label}
+      </span>
+      <div
+        className={`grid grid-cols-[1fr_auto] overflow-hidden rounded-2xl border ${
+          disabled
+            ? "border-stone-200 bg-stone-50"
+            : "border-stone-300 bg-white focus-within:border-stone-500"
+        }`}
+      >
         <input
           type="number"
           min="1"
           value={amount}
           disabled={disabled}
           onChange={(event) => onAmount(event.target.value)}
-          className="min-w-0 bg-transparent px-3 py-2 outline-none disabled:text-stone-400"
+          className="min-w-0 bg-transparent px-4 py-3 outline-none disabled:text-stone-400"
         />
         <select
           value={unit}
           disabled={disabled}
           onChange={(event) => onUnit(event.target.value)}
-          className="border-l border-stone-300 bg-stone-50 px-2 outline-none disabled:border-stone-200 disabled:text-stone-400"
+          className="border-l border-stone-300 bg-stone-50 px-3 outline-none disabled:border-stone-200 disabled:text-stone-400"
         >
           <option value="days">days</option>
           <option value="weeks">weeks</option>

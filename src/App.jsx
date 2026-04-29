@@ -1345,36 +1345,38 @@ function ItemCard({
           >
             <I.dots size={16} />
           </button>
-          {menuOpen && (
-            <Menu
-              onLog={() => {
-                setMenuOpen(false);
-                onToggleLog();
-              }}
-              onRetro={() => {
-                setMenuOpen(false);
-                setRetroOpen(true);
-              }}
-              onPause={() => {
-                setMenuOpen(false);
-                onPauseToggle();
-              }}
-              onEdit={() => {
-                setMenuOpen(false);
-                onEdit();
-              }}
-              onComplete={() => {
-                setMenuOpen(false);
-                setConfirmComplete(true);
-              }}
-              onDelete={() => {
-                setMenuOpen(false);
-                setConfirmDelete(true);
-              }}
-              logCount={item.log.length}
-              isPaused={status.isPaused}
-            />
-          )}
+          <AnimatePresence>
+            {menuOpen && (
+              <Menu
+                onLog={() => {
+                  setMenuOpen(false);
+                  onToggleLog();
+                }}
+                onRetro={() => {
+                  setMenuOpen(false);
+                  setRetroOpen(true);
+                }}
+                onPause={() => {
+                  setMenuOpen(false);
+                  onPauseToggle();
+                }}
+                onEdit={() => {
+                  setMenuOpen(false);
+                  onEdit();
+                }}
+                onComplete={() => {
+                  setMenuOpen(false);
+                  setConfirmComplete(true);
+                }}
+                onDelete={() => {
+                  setMenuOpen(false);
+                  setConfirmDelete(true);
+                }}
+                logCount={item.log.length}
+                isPaused={status.isPaused}
+              />
+            )}
+          </AnimatePresence>
         </div>
 
         {confirmComplete && (
@@ -1407,7 +1409,13 @@ function ItemCard({
 
 function Menu({ onLog, onRetro, onPause, onEdit, onComplete, onDelete, logCount, isPaused }) {
   return (
-    <div className="absolute bottom-12 right-0 z-10 w-44 overflow-hidden rounded-xl border border-stone-200 bg-white py-1 shadow-lg">
+    <motion.div
+      initial={{ opacity: 0, y: -4, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -4, scale: 0.98 }}
+      transition={{ duration: 0.15 }}
+      className="absolute bottom-12 right-0 z-10 w-44 overflow-hidden rounded-xl border border-stone-200 bg-white py-1 shadow-lg"
+    >
       <button
         type="button"
         onClick={onLog}
@@ -1456,7 +1464,7 @@ function Menu({ onLog, onRetro, onPause, onEdit, onComplete, onDelete, logCount,
         <I.trash size={16} />
         Delete item
       </button>
-    </div>
+    </motion.div>
   );
 }
 

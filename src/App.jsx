@@ -227,7 +227,6 @@ function makeItem(form) {
     createdAt: now,
     lastCheckedAt: now,
     pausedAt: null,
-    pinned: false,
     log: [],
   };
 }
@@ -248,7 +247,6 @@ function normalizeItem(item) {
     targetMs,
     maxMs,
     pausedAt: item.pausedAt ?? null,
-    pinned: item.pinned === true,
     log,
     lastCheckedAt,
   };
@@ -594,8 +592,6 @@ export default function App() {
 
   const sortedItems = useMemo(() => {
     return [...items].sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-
       const statusA = getStatus(a, now);
       const statusB = getStatus(b, now);
 
@@ -749,16 +745,6 @@ export default function App() {
     );
   }
 
-  function togglePin(id) {
-    setItems((current) =>
-      current.map((item) =>
-        item.id === id
-          ? { ...item, pinned: !item.pinned }
-          : { ...item, pinned: false }
-      )
-    );
-  }
-
   function completeItem(id) {
     const completedAt = currentTimestamp();
     setItems((current) => {
@@ -862,7 +848,6 @@ export default function App() {
                 setEditForm={setEditForm}
                 logOpen={openLogId === item.id}
                 onCheckIn={() => checkIn(item.id)}
-                onPinToggle={() => togglePin(item.id)}
                 onPauseToggle={() => togglePause(item.id)}
                 onRetroCheckIn={(timestamp) => retroCheckIn(item.id, timestamp)}
                 onComplete={() => completeItem(item.id)}
@@ -1224,7 +1209,6 @@ function ItemCard({
   setEditForm,
   logOpen,
   onCheckIn,
-  onPinToggle,
   onPauseToggle,
   onRetroCheckIn,
   onComplete,
@@ -1298,10 +1282,7 @@ function ItemCard({
       <div className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold">
-              {item.pinned ? "Pinned: " : ""}
-              {item.name}
-            </h2>
+            <h2 className="text-xl font-bold">{item.name}</h2>
             <TargetSummary item={item} />
           </div>
           <div className={`shrink-0 pt-0.5 text-sm font-semibold ${toneClass(status.tone)}`}>
@@ -1331,10 +1312,9 @@ function ItemCard({
 
         <div className="mt-4 grid gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600 sm:grid-cols-2">
           <div>
-            <I.clock size={15} /> Target: {formatDateTime(targetAt)}
+            Target: {formatDateTime(targetAt)}
           </div>
           <div>
-            {status.isOverMax ? <I.warn size={15} /> : <I.clock size={15} />}{" "}
             {status.hasCheckIns ? `Last check-in: ${formatDateTime(item.lastCheckedAt)}` : `Created: ${formatDateTime(item.createdAt)}`}
           </div>
         </div>
@@ -1379,10 +1359,6 @@ function ItemCard({
                   setMenuOpen(false);
                   onPauseToggle();
                 }}
-                onPin={() => {
-                  setMenuOpen(false);
-                  onPinToggle();
-                }}
                 onEdit={() => {
                   setMenuOpen(false);
                   onEdit();
@@ -1395,7 +1371,6 @@ function ItemCard({
                   setMenuOpen(false);
                   setConfirmDelete(true);
                 }}
-                isPinned={item.pinned}
                 logCount={item.log.length}
                 isPaused={status.isPaused}
               />
@@ -1431,7 +1406,7 @@ function ItemCard({
   );
 }
 
-function Menu({ onLog, onRetro, onPause, onPin, onEdit, onComplete, onDelete, logCount, isPaused, isPinned }) {
+function Menu({ onLog, onRetro, onPause, onEdit, onComplete, onDelete, logCount, isPaused }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 4, scale: 0.98 }}
@@ -1463,14 +1438,6 @@ function Menu({ onLog, onRetro, onPause, onPin, onEdit, onComplete, onDelete, lo
       >
         <I.clock size={16} />
         {isPaused ? "Resume item" : "Pause item"}
-      </button>
-      <button
-        type="button"
-        onClick={onPin}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-stone-100"
-      >
-        <I.book size={16} />
-        {isPinned ? "Unpin item" : "Pin item"}
       </button>
       <button
         type="button"

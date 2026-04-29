@@ -1277,7 +1277,7 @@ function ItemCard({
   return (
     <motion.article
       layout
-      className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm"
+      className="rounded-2xl border border-stone-200 bg-white shadow-sm"
     >
       <div className="p-4">
         <div className="flex items-start justify-between gap-4">

@@ -946,6 +946,7 @@ function Header({ stats, sortMode, onSortChange, onAdd, onSettings }) {
 
 function SortDropdown({ sortMode, onSortChange }) {
   const [open, setOpen] = useState(false);
+  const dropdownRef = useRef(null);
   const options = [
     { value: "urgency", label: "Urgency" },
     { value: "checkins", label: "Check-ins" },
@@ -958,8 +959,21 @@ function SortDropdown({ sortMode, onSortChange }) {
     setOpen(false);
   }
 
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePointerDown(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div ref={dropdownRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -1206,6 +1220,7 @@ function ItemCard({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [retroOpen, setRetroOpen] = useState(false);
+  const menuRef = useRef(null);
   const [retroValue, setRetroValue] = useState(() =>
     toDateTimeLocalValue(currentTimestamp() - 3600000)
   );
@@ -1221,6 +1236,19 @@ function ItemCard({
     onRetroCheckIn(new Date(retroValue).getTime());
     setRetroOpen(false);
   }
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function handlePointerDown(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [menuOpen]);
 
   if (isEditing) {
     return (
@@ -1292,7 +1320,7 @@ function ItemCard({
           </div>
         </div>
 
-        <div className="relative mt-4 flex items-center gap-2">
+        <div ref={menuRef} className="relative mt-4 flex items-center gap-2">
           <button
             type="button"
             onClick={status.isPaused ? onPauseToggle : onCheckIn}

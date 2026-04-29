@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 const STORAGE_KEY = "checkins.items.v2";
+const COMPLETED_KEY = "checkins.completed.v1";
 const SETTINGS_KEY = "checkins.settings.v2";
 const ONBOARDING_KEY = "checkins.onboarding.done.v2";
 const ALERT_NEVER_KEY = "checkins.alerts.never.v2";
@@ -225,6 +226,7 @@ function makeItem(form) {
     ...normalized,
     createdAt: now,
     lastCheckedAt: now,
+    pausedAt: null,
     log: [],
   };
 }
@@ -244,22 +246,24 @@ function normalizeItem(item) {
     maxAmount: item.maxAmount ?? defaultForm.maxAmount,
     targetMs,
     maxMs,
+    pausedAt: item.pausedAt ?? null,
     log,
     lastCheckedAt,
   };
 }
 
 function getStatus(item, now) {
+  const isPaused = Number.isFinite(item.pausedAt);
   const elapsed = now - item.lastCheckedAt;
   const targetRemaining = item.targetMs - elapsed;
   const hasMax = item.maxEnabled !== false && item.maxMs != null;
   const maxRemaining = hasMax ? item.maxMs - elapsed : Infinity;
   const targetProgress = item.targetMs > 0 ? elapsed / item.targetMs : 1;
   const maxProgress = hasMax && item.maxMs > 0 ? elapsed / item.maxMs : targetProgress;
-  const isOverMax = hasMax ? elapsed >= item.maxMs : false;
-  const isDue = elapsed >= item.targetMs;
+  const isOverMax = !isPaused && hasMax ? elapsed >= item.maxMs : false;
+  const isDue = !isPaused && elapsed >= item.targetMs;
   const hasCheckIns = Array.isArray(item.log) && item.log.length > 0;
-  const canCheckIn = !hasCheckIns || elapsed >= COOLDOWN_MS;
+  const canCheckIn = !isPaused && (!hasCheckIns || elapsed >= COOLDOWN_MS);
 
   let label = "Fresh";
   let tone = "fresh";
@@ -267,7 +271,13 @@ function getStatus(item, now) {
   let targetText = `${formatDuration(targetRemaining)} until target`;
   let maxText = hasMax ? `${formatDuration(maxRemaining)} until max` : "Max gap disabled";
 
-  if (isOverMax) {
+  if (isPaused) {
+    label = "Paused";
+    tone = "paused";
+    alertLevel = "fresh";
+    targetText = "Timer paused";
+    maxText = "Paused";
+  } else if (isOverMax) {
     label = "Over max";
     tone = "danger";
     alertLevel = "over-max";
@@ -290,6 +300,7 @@ function getStatus(item, now) {
     maxProgress: clamp(maxProgress, 0, 1),
     isDue,
     isOverMax,
+    isPaused,
     canCheckIn,
     label,
     tone,
@@ -304,6 +315,7 @@ function toneClass(tone) {
   if (tone === "danger") return "text-red-700";
   if (tone === "due") return "text-amber-700";
   if (tone === "soon") return "text-yellow-700";
+  if (tone === "paused") return "text-stone-500";
   return "text-emerald-700";
 }
 
@@ -311,6 +323,7 @@ function barClass(tone) {
   if (tone === "danger") return "bg-red-500";
   if (tone === "due") return "bg-amber-500";
   if (tone === "soon") return "bg-yellow-500";
+  if (tone === "paused") return "bg-stone-300";
   return "bg-emerald-500";
 }
 
@@ -403,6 +416,12 @@ function getInitialItems() {
   return Array.isArray(savedItems) ? savedItems.map(normalizeItem) : [];
 }
 
+function getInitialCompletedItems() {
+  if (typeof window === "undefined") return [];
+  const savedItems = readJson(COMPLETED_KEY, []);
+  return Array.isArray(savedItems) ? savedItems.map(normalizeItem) : [];
+}
+
 function getInitialSettings() {
   if (typeof window === "undefined") return defaultSettings;
   return { ...defaultSettings, ...readJson(SETTINGS_KEY, defaultSettings) };
@@ -467,6 +486,7 @@ function TargetSummary({ item }) {
 export default function App() {
   const notifiedRef = useRef({});
   const [items, setItems] = useState(getInitialItems);
+  const [completedItems, setCompletedItems] = useState(getInitialCompletedItems);
   const [form, setForm] = useState(defaultForm);
   const [settings, setSettings] = useState(getInitialSettings);
   const [permission, setPermission] = useState(getInitialPermission);
@@ -492,6 +512,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
+
+  useEffect(() => {
+    localStorage.setItem(COMPLETED_KEY, JSON.stringify(completedItems));
+  }, [completedItems]);
 
   useEffect(() => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -568,6 +592,13 @@ export default function App() {
 
   const sortedItems = useMemo(() => {
     return [...items].sort((a, b) => {
+      const statusA = getStatus(a, now);
+      const statusB = getStatus(b, now);
+
+      if (statusA.isPaused !== statusB.isPaused) {
+        return statusA.isPaused ? 1 : -1;
+      }
+
       if (sortMode === "alphabetical") {
         return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
       }
@@ -579,10 +610,6 @@ export default function App() {
 
         return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
       }
-
-      const statusA = getStatus(a, now);
-      const statusB = getStatus(b, now);
-
       if (statusA.isOverMax !== statusB.isOverMax) return statusA.isOverMax ? -1 : 1;
       if (statusA.isDue !== statusB.isDue) return statusA.isDue ? -1 : 1;
       if (statusB.maxProgress !== statusA.maxProgress) {
@@ -708,6 +735,34 @@ export default function App() {
     if (editingId === id) setEditingId(null);
   }
 
+  function togglePause(id) {
+    setItems((current) =>
+      current.map((item) =>
+        item.id === id
+          ? { ...item, pausedAt: item.pausedAt == null ? currentTimestamp() : null }
+          : item
+      )
+    );
+  }
+
+  function completeItem(id) {
+    const completedAt = currentTimestamp();
+    setItems((current) => {
+      const item = current.find((entry) => entry.id === id);
+      if (!item) return current;
+
+      setCompletedItems((completed) => [
+        { ...item, pausedAt: null, completedAt },
+        ...completed,
+      ]);
+
+      return current.filter((entry) => entry.id !== id);
+    });
+
+    if (openLogId === id) setOpenLogId(null);
+    if (editingId === id) setEditingId(null);
+  }
+
   function startEdit(item) {
     setEditingId(item.id);
     setEditForm(createFormState(item));
@@ -726,12 +781,14 @@ export default function App() {
 
   function clearAll() {
     setItems([]);
+    setCompletedItems([]);
     setOpenLogId(null);
     setEditingId(null);
     setShowAdd(false);
     setShowSettings(false);
     setShowClearConfirm(false);
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(COMPLETED_KEY);
     notifiedRef.current = {};
   }
 
@@ -791,7 +848,9 @@ export default function App() {
                 setEditForm={setEditForm}
                 logOpen={openLogId === item.id}
                 onCheckIn={() => checkIn(item.id)}
+                onPauseToggle={() => togglePause(item.id)}
                 onRetroCheckIn={(timestamp) => retroCheckIn(item.id, timestamp)}
+                onComplete={() => completeItem(item.id)}
                 onDelete={() => deleteItem(item.id)}
                 onEdit={() => startEdit(item)}
                 onSaveEdit={() => saveEdit(item.id)}
@@ -828,6 +887,7 @@ export default function App() {
             alertsOn={permission === "granted" && settings.alertsEnabled}
             alertsLoading={alertsLoading}
             alertMessage={alertMessage}
+            completedItems={completedItems}
             showClearConfirm={showClearConfirm}
             onClose={() => {
               setShowSettings(false);
@@ -1135,7 +1195,9 @@ function ItemCard({
   setEditForm,
   logOpen,
   onCheckIn,
+  onPauseToggle,
   onRetroCheckIn,
+  onComplete,
   onDelete,
   onEdit,
   onSaveEdit,
@@ -1147,6 +1209,7 @@ function ItemCard({
   const [retroValue, setRetroValue] = useState(() =>
     toDateTimeLocalValue(currentTimestamp() - 3600000)
   );
+  const [confirmComplete, setConfirmComplete] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const status = getStatus(item, now);
   const maxAt = item.maxEnabled === false || item.maxMs == null ? null : item.lastCheckedAt + item.maxMs;
@@ -1232,16 +1295,18 @@ function ItemCard({
         <div className="relative mt-4 flex items-center gap-2">
           <button
             type="button"
-            onClick={onCheckIn}
-            disabled={!status.canCheckIn}
+            onClick={status.isPaused ? onPauseToggle : onCheckIn}
+            disabled={!status.isPaused && !status.canCheckIn}
             className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold ${
-              status.canCheckIn
+              status.isPaused || status.canCheckIn
                 ? "bg-emerald-600 text-white hover:bg-emerald-700"
                 : "cursor-not-allowed bg-stone-100 text-stone-500"
             }`}
           >
             <I.check size={17} />
-            {status.canCheckIn
+            {status.isPaused
+              ? "Resume"
+              : status.canCheckIn
               ? "Check in"
               : `Available in ${formatDuration(status.cooldownRemaining)}`}
           </button>
@@ -1262,19 +1327,34 @@ function ItemCard({
                 setMenuOpen(false);
                 setRetroOpen(true);
               }}
+              onPause={() => {
+                setMenuOpen(false);
+                onPauseToggle();
+              }}
               onEdit={() => {
                 setMenuOpen(false);
                 onEdit();
+              }}
+              onComplete={() => {
+                setMenuOpen(false);
+                setConfirmComplete(true);
               }}
               onDelete={() => {
                 setMenuOpen(false);
                 setConfirmDelete(true);
               }}
               logCount={item.log.length}
+              isPaused={status.isPaused}
             />
           )}
         </div>
 
+        {confirmComplete && (
+          <ConfirmComplete
+            onCancel={() => setConfirmComplete(false)}
+            onConfirm={onComplete}
+          />
+        )}
         {confirmDelete && (
           <ConfirmDelete
             onCancel={() => setConfirmDelete(false)}
@@ -1297,7 +1377,7 @@ function ItemCard({
   );
 }
 
-function Menu({ onLog, onRetro, onEdit, onDelete, logCount }) {
+function Menu({ onLog, onRetro, onPause, onEdit, onComplete, onDelete, logCount, isPaused }) {
   return (
     <div className="absolute bottom-12 right-0 z-10 w-44 overflow-hidden rounded-xl border border-stone-200 bg-white py-1 shadow-lg">
       <button
@@ -1318,11 +1398,27 @@ function Menu({ onLog, onRetro, onEdit, onDelete, logCount }) {
       </button>
       <button
         type="button"
+        onClick={onPause}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-stone-100"
+      >
+        <I.clock size={16} />
+        {isPaused ? "Resume item" : "Pause item"}
+      </button>
+      <button
+        type="button"
         onClick={onEdit}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-stone-100"
       >
         <I.edit size={16} />
         Edit item
+      </button>
+      <button
+        type="button"
+        onClick={onComplete}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50"
+      >
+        <I.check size={16} />
+        Complete item
       </button>
       <button
         type="button"
@@ -1332,6 +1428,33 @@ function Menu({ onLog, onRetro, onEdit, onDelete, logCount }) {
         <I.trash size={16} />
         Delete item
       </button>
+    </div>
+  );
+}
+
+function ConfirmComplete({ onCancel, onConfirm }) {
+  return (
+    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+      <p className="text-sm font-semibold text-emerald-800">Complete this item?</p>
+      <p className="mt-1 text-sm text-emerald-700">
+        This moves it and its logbook into the archive in Settings.
+      </p>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800"
+        >
+          Complete
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium hover:bg-stone-100"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
@@ -1567,6 +1690,7 @@ function SettingsModal({
   alertsOn,
   alertsLoading,
   alertMessage,
+  completedItems,
   showClearConfirm,
   onClose,
   onRequestAlerts,
@@ -1576,9 +1700,81 @@ function SettingsModal({
   onHideClearConfirm,
   onClearAll,
 }) {
+  const [tab, setTab] = useState("general");
+
   return (
     <Modal title="Settings" onClose={onClose} wide>
       <div className="space-y-4">
+        <div className="flex gap-2 border-b border-stone-200 pb-3">
+          <button
+            type="button"
+            onClick={() => setTab("general")}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              tab === "general"
+                ? "bg-stone-900 text-white"
+                : "border border-stone-200 text-stone-700 hover:bg-stone-100"
+            }`}
+          >
+            General
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("archive")}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              tab === "archive"
+                ? "bg-stone-900 text-white"
+                : "border border-stone-200 text-stone-700 hover:bg-stone-100"
+            }`}
+          >
+            Archive ({completedItems.length})
+          </button>
+        </div>
+
+        {tab === "archive" ? (
+          <section className="rounded-xl border border-stone-200 p-3">
+            <h3 className="text-sm font-semibold">Completed items</h3>
+            {completedItems.length === 0 ? (
+              <p className="mt-2 text-sm text-stone-500">No completed items yet.</p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {completedItems.map((item) => (
+                  <div
+                    key={`${item.id}-${item.completedAt ?? item.createdAt}`}
+                    className="rounded-xl border border-stone-200 bg-stone-50 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-stone-900">{item.name}</h4>
+                        <p className="mt-1 text-xs text-stone-500">
+                          Completed {formatDateTime(item.completedAt ?? item.lastCheckedAt)}
+                        </p>
+                      </div>
+                      <span className="text-xs font-medium text-emerald-700">Complete</span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-stone-600 sm:grid-cols-2">
+                      <p>
+                        Target gap: {item.targetAmount} {item.targetUnit}
+                      </p>
+                      <p>
+                        Max gap: {item.maxEnabled === false ? "Off" : `${item.maxAmount} ${item.maxUnit}`}
+                      </p>
+                      <p>Created: {formatDateTime(item.createdAt)}</p>
+                      <p>
+                        {item.log.length > 0
+                          ? `Last check-in: ${formatDateTime(item.lastCheckedAt)}`
+                          : "No check-ins recorded"}
+                      </p>
+                    </div>
+                    <p className="mt-3 text-xs text-stone-500">
+                      {item.log.length} check-in{item.log.length === 1 ? "" : "s"} recorded
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : (
+          <>
         <section className="rounded-xl border border-stone-200 p-3">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -1690,6 +1886,8 @@ function SettingsModal({
             GitHub repository
           </a>
         </div>
+          </>
+        )}
       </div>
     </Modal>
   );

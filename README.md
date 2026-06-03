@@ -1,16 +1,34 @@
-# React + Vite
+# Check-ins
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Check-ins is a project tracker for long-term work. V1 is a lightweight local-first Vite app. V2 is a cross-platform Expo app that merges the check-ins concept with a to-do list and account-backed sync.
 
-Currently, two official plugins are available:
+## V1
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+V1 lives at the repo root.
 
-## React Compiler
+```bash
+npm install
+npm run dev
+npm run build
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+V1 stores all data in browser localStorage. It has no backend and no account system.
 
-## Expanding the ESLint configuration
+## V2
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+V2 lives in `apps/v2`.
+
+```bash
+npm run v2:web
+npm run v2:typecheck
+npm run v2:guard
+```
+
+V2 is built with Expo, React Native, and Supabase. It supports local preview mode without Supabase keys and real account-backed sync once the Supabase env vars and schema are configured.
+
+## Product Rules
+
+- No payments.
+- No ads.
+- Accounts are for sync only.
+- Browser reminders must be honest about only working while the app is open unless a future PWA/service-worker system is added.

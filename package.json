@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "v2:web": "npm --prefix apps/v2 run web",
+    "v2:typecheck": "npm --prefix apps/v2 run typecheck",
+    "v2:export:web": "npm --prefix apps/v2 run export:web",
+    "v2:guard": "npm --prefix apps/v2 run guard:no-monetization"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",

@@ -22,9 +22,11 @@ V2 lives in `apps/v2`.
 npm run v2:web
 npm run v2:typecheck
 npm run v2:guard
+npm run v2:eas:build:android
+npm run v2:eas:build:ios
 ```
 
-V2 is built with Expo, React Native, and Supabase. It supports local preview mode without Supabase keys and real account-backed sync once the Supabase env vars and schema are configured.
+V2 is built with Expo, React Native, and Supabase. It supports local preview mode in development/preview builds and real account-backed sync once the Supabase env vars, schema, and `delete-account` Edge Function are configured.
 
 ## Product Rules
 

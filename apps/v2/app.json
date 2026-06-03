@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Check-ins V2",
+    "name": "Check-ins",
     "slug": "check-ins-v2",
     "version": "1.0.0",
     "scheme": "checkinsv2",
@@ -8,9 +8,13 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
+      "bundleIdentifier": "com.chrissyuh.checkins",
+      "buildNumber": "1",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.chrissyuh.checkins",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -22,9 +26,19 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "extra": {
+      "supportEmail": "chrisaheskett@gmail.com"
+    },
     "plugins": [
       "expo-router",
-      "expo-notifications"
+      [
+        "expo-notifications",
+        {
+          "color": "#0f172a",
+          "defaultChannel": "check-ins",
+          "enableBackgroundRemoteNotifications": false
+        }
+      ]
     ]
   }
 }

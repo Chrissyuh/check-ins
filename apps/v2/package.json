@@ -30,7 +30,13 @@
     "web": "expo start --web",
     "export:web": "expo export --platform web",
     "typecheck": "tsc --noEmit",
-    "guard:no-monetization": "node ./scripts/guard-no-monetization.mjs"
+    "guard:no-monetization": "node ./scripts/guard-no-monetization.mjs",
+    "eas:build:android": "npx eas-cli@latest build --platform android --profile production",
+    "eas:build:ios": "npx eas-cli@latest build --platform ios --profile production",
+    "eas:build:preview:android": "npx eas-cli@latest build --platform android --profile preview",
+    "eas:build:preview:ios": "npx eas-cli@latest build --platform ios --profile preview",
+    "eas:submit:android": "npx eas-cli@latest submit --platform android --profile production",
+    "eas:submit:ios": "npx eas-cli@latest submit --platform ios --profile production"
   },
   "private": true
 }

@@ -9,6 +9,12 @@ const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const allowLocalPreview = process.env.EXPO_PUBLIC_ALLOW_LOCAL_PREVIEW !== "false";
+export const privacyPolicyUrl =
+  process.env.EXPO_PUBLIC_PRIVACY_URL ??
+  "https://github.com/Chrissyuh/check-ins/blob/main/apps/v2/store/privacy-policy.md";
+export const supportUrl =
+  process.env.EXPO_PUBLIC_SUPPORT_URL ?? "https://github.com/Chrissyuh/check-ins/issues";
 
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {

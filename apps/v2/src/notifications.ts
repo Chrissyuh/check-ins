@@ -26,6 +26,13 @@ export async function requestNotificationPermission() {
   const Notifications = await getNotifications();
   if (!Notifications) return false;
 
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("check-ins", {
+      name: "Check-ins",
+      importance: Notifications.AndroidImportance.DEFAULT,
+    });
+  }
+
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
 

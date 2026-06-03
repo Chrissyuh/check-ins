@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -17,7 +18,14 @@ import { daysAgoIso, formatDateTime, formatDuration, localId, nowIso } from "../
 import { scheduleLocalReminder, reminderHonestyText } from "../src/notifications";
 import { createEmptyWorkspace, createPreviewWorkspace } from "../src/sampleData";
 import { getProjectStatus } from "../src/status";
-import { isSupabaseConfigured, supabase, type AuthSession } from "../src/supabase";
+import {
+  allowLocalPreview,
+  isSupabaseConfigured,
+  privacyPolicyUrl,
+  supabase,
+  supportUrl,
+  type AuthSession,
+} from "../src/supabase";
 import type { CheckIn, DurationUnit, Project, Task, WorkspaceData } from "../src/types";
 
 const PREVIEW_STORAGE_KEY = "checkins.v2.preview.workspace";
@@ -95,7 +103,7 @@ export default function IndexScreen() {
   useEffect(() => {
     if (booting) return;
 
-    if (localPreview) {
+    if (localPreview && allowLocalPreview) {
       loadLocalPreview();
       return;
     }
@@ -446,15 +454,11 @@ export default function IndexScreen() {
   }
 
   async function clearWorkspace() {
-    if (Platform.OS === "web") {
-      await actuallyClearWorkspace();
-      return;
-    }
-
-    Alert.alert("Clear workspace?", "This deletes this user's projects, tasks, and check-ins.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Clear", style: "destructive", onPress: actuallyClearWorkspace },
-    ]);
+    confirmDanger(
+      "Clear workspace?",
+      "This deletes this user's projects, tasks, reminders, and check-ins.",
+      actuallyClearWorkspace
+    );
   }
 
   async function actuallyClearWorkspace() {
@@ -462,6 +466,8 @@ export default function IndexScreen() {
       await Promise.all([
         supabase.from("check_ins").delete().eq("user_id", userId),
         supabase.from("tasks").delete().eq("user_id", userId),
+        supabase.from("reminders").delete().eq("user_id", userId),
+        supabase.from("settings").delete().eq("user_id", userId),
         supabase.from("projects").delete().eq("user_id", userId),
       ]);
     } else {
@@ -486,11 +492,71 @@ export default function IndexScreen() {
     );
   }
 
+  async function deleteAccount() {
+    confirmDanger(
+      "Delete account?",
+      "This permanently deletes your account and all synced Check-ins data. This cannot be undone.",
+      actuallyDeleteAccount
+    );
+  }
+
+  async function actuallyDeleteAccount() {
+    if (localPreview) {
+      await actuallyClearWorkspace();
+      setLocalPreview(false);
+      setMessage("Local preview data deleted.");
+      return;
+    }
+
+    if (!supabase || !session) {
+      setMessage("Sign in before deleting an account.");
+      return;
+    }
+
+    setSyncing(true);
+    const { error } = await supabase.functions.invoke("delete-account");
+    setSyncing(false);
+
+    if (error) {
+      setMessage(error.message || "Could not delete account.");
+      return;
+    }
+
+    await supabase.auth.signOut();
+    setSession(null);
+    setWorkspace(createEmptyWorkspace());
+    setMessage("Account deleted.");
+  }
+
+  async function openExternalUrl(url: string) {
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      setMessage(`Could not open ${url}`);
+      return;
+    }
+
+    await Linking.openURL(url);
+  }
+
+  function confirmDanger(title: string, body: string, onConfirm: () => void | Promise<void>) {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      if (window.confirm(`${title}\n\n${body}`)) {
+        void onConfirm();
+      }
+      return;
+    }
+
+    Alert.alert(title, body, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Continue", style: "destructive", onPress: () => void onConfirm() },
+    ]);
+  }
+
   if (booting) {
     return (
       <CenteredScreen>
         <ActivityIndicator size="large" color="#059669" />
-        <Text style={styles.muted}>Starting Check-ins V2...</Text>
+        <Text style={styles.muted}>Starting Check-ins...</Text>
       </CenteredScreen>
     );
   }
@@ -500,14 +566,20 @@ export default function IndexScreen() {
       <CenteredScreen>
         <StatusBar style="dark" />
         <View style={styles.setupCard}>
-          <Text style={styles.logo}>Check-ins V2</Text>
+          <Text style={styles.logo}>Check-ins</Text>
           <Text style={styles.h1}>Accounts need Supabase env vars.</Text>
           <Text style={styles.body}>
             Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY from
             .env.example to enable real accounts and sync.
           </Text>
           <Text style={styles.promise}>No payments. No ads. Ever.</Text>
-          <Button label="Use local preview" onPress={() => setLocalPreview(true)} />
+          {allowLocalPreview ? (
+            <Button label="Use local preview" onPress={() => setLocalPreview(true)} />
+          ) : (
+            <Text style={styles.warning}>
+              Production builds require Supabase env vars. Local preview is disabled.
+            </Text>
+          )}
         </View>
       </CenteredScreen>
     );
@@ -518,7 +590,7 @@ export default function IndexScreen() {
       <CenteredScreen>
         <StatusBar style="dark" />
         <View style={styles.setupCard}>
-          <Text style={styles.logo}>Check-ins V2</Text>
+          <Text style={styles.logo}>Check-ins</Text>
           <Text style={styles.h1}>{authMode === "signin" ? "Sign in" : "Create account"}</Text>
           <TextInput
             value={authEmail}
@@ -550,7 +622,9 @@ export default function IndexScreen() {
               {authMode === "signin" ? "Need an account?" : "Already have an account?"}
             </Text>
           </Pressable>
-          <Button label="Use local preview" kind="ghost" onPress={() => setLocalPreview(true)} />
+          {allowLocalPreview ? (
+            <Button label="Use local preview" kind="ghost" onPress={() => setLocalPreview(true)} />
+          ) : null}
         </View>
       </CenteredScreen>
     );
@@ -562,7 +636,7 @@ export default function IndexScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
           <View>
-            <Text style={styles.logo}>Check-ins V2</Text>
+            <Text style={styles.logo}>Check-ins</Text>
             <Text style={styles.subtitle}>To-dos with memory for long-term work.</Text>
           </View>
           <View style={styles.accountBadge}>
@@ -695,8 +769,15 @@ export default function IndexScreen() {
             <Text style={styles.body}>
               Data is {localPreview ? "stored on this device for preview" : "owned by the signed-in user in Supabase"}.
             </Text>
+            <Button
+              label="Privacy Policy"
+              kind="secondary"
+              onPress={() => void openExternalUrl(privacyPolicyUrl)}
+            />
+            <Button label="Support" kind="secondary" onPress={() => void openExternalUrl(supportUrl)} />
             <Button label="Refresh sync" kind="secondary" onPress={loadRemoteWorkspace} disabled={!isRemote} />
             <Button label="Clear workspace data" kind="danger" onPress={clearWorkspace} />
+            <Button label="Delete account" kind="danger" onPress={deleteAccount} />
             <Button label={localPreview ? "Exit preview" : "Sign out"} kind="ghost" onPress={signOut} />
           </Section>
         ) : null}

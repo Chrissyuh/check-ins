@@ -11,7 +11,15 @@ const banned = [
   "adsense",
   "doubleclick",
   "billing",
+  "billingclient",
+  "com.android.billingclient",
   "checkout",
+  "expo-ads-admob",
+  "googlemobileads",
+  "in-app-purchases",
+  "in_app_purchase",
+  "react-native-google-mobile-ads",
+  "skpayment",
 ];
 const ignoredDirs = new Set(["node_modules", ".expo", "dist", "web-build", ".git"]);
 const ignoredFiles = new Set(["package-lock.json"]);
@@ -31,10 +39,13 @@ function walk(dir) {
     if (ignoredFiles.has(entry.name)) continue;
     if (!scannedExtensions.has(path.extname(entry.name))) continue;
 
+    const relativePath = path.relative(root, fullPath);
+    if (relativePath === path.join("scripts", "guard-no-monetization.mjs")) continue;
+
     const text = fs.readFileSync(fullPath, "utf8").toLowerCase();
     for (const word of banned) {
       if (text.includes(word)) {
-        hits.push(`${path.relative(root, fullPath)} contains "${word}"`);
+        hits.push(`${relativePath} contains "${word}"`);
       }
     }
   }
@@ -42,22 +53,9 @@ function walk(dir) {
 
 walk(root);
 
-const allowedSelfHits = new Set([
-  'scripts\\guard-no-monetization.mjs contains "stripe"',
-  'scripts\\guard-no-monetization.mjs contains "paypal"',
-  'scripts\\guard-no-monetization.mjs contains "braintree"',
-  'scripts\\guard-no-monetization.mjs contains "revenuecat"',
-  'scripts\\guard-no-monetization.mjs contains "admob"',
-  'scripts\\guard-no-monetization.mjs contains "adsense"',
-  'scripts\\guard-no-monetization.mjs contains "doubleclick"',
-  'scripts\\guard-no-monetization.mjs contains "billing"',
-  'scripts\\guard-no-monetization.mjs contains "checkout"',
-]);
-const normalizedHits = hits.filter((hit) => !allowedSelfHits.has(hit));
-
-if (normalizedHits.length > 0) {
+if (hits.length > 0) {
   console.error("Monetization guard failed:");
-  for (const hit of normalizedHits) console.error(`- ${hit}`);
+  for (const hit of hits) console.error(`- ${hit}`);
   process.exit(1);
 }
 

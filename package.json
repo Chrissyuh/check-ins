@@ -11,7 +11,11 @@
     "v2:web": "npm --prefix apps/v2 run web",
     "v2:typecheck": "npm --prefix apps/v2 run typecheck",
     "v2:export:web": "npm --prefix apps/v2 run export:web",
-    "v2:guard": "npm --prefix apps/v2 run guard:no-monetization"
+    "v2:guard": "npm --prefix apps/v2 run guard:no-monetization",
+    "v2:eas:build:android": "npm --prefix apps/v2 run eas:build:android",
+    "v2:eas:build:ios": "npm --prefix apps/v2 run eas:build:ios",
+    "v2:eas:submit:android": "npm --prefix apps/v2 run eas:submit:android",
+    "v2:eas:submit:ios": "npm --prefix apps/v2 run eas:submit:ios"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",

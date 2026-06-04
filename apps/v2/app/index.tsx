@@ -383,11 +383,18 @@ export default function IndexScreen() {
     }));
   }
 
-  async function createCheckIn(project: Project, occurredAt = nowIso(), note = "Worked on this") {
+  async function createCheckIn(
+    project: Project,
+    occurredAt = nowIso(),
+    note = "Worked on this",
+    linkedTask: Task | null = null,
+    completeLinkedTask = false
+  ) {
+    const completedAt = completeLinkedTask ? nowIso() : null;
     const payload = {
       user_id: userId,
       project_id: project.id,
-      task_id: null,
+      task_id: linkedTask?.id ?? null,
       note,
       occurred_at: occurredAt,
       created_at: nowIso(),
@@ -411,13 +418,30 @@ export default function IndexScreen() {
         setMessage(projectResult.error.message);
         return;
       }
+      if (linkedTask && completeLinkedTask) {
+        const taskResult = await supabase
+          .from("tasks")
+          .update({ status: "done", completed_at: completedAt, updated_at: nowIso() })
+          .eq("id", linkedTask.id);
+        if (taskResult.error) {
+          setMessage(taskResult.error.message);
+          return;
+        }
+      }
       setWorkspace((current) => ({
         projects: current.projects.map((entry) =>
           entry.id === project.id
             ? { ...entry, last_checked_at: newestCheckIn, updated_at: nowIso() }
             : entry
         ),
-        tasks: current.tasks,
+        tasks:
+          linkedTask && completeLinkedTask
+            ? current.tasks.map((task) =>
+                task.id === linkedTask.id
+                  ? { ...task, status: "done", completed_at: completedAt, updated_at: nowIso() }
+                  : task
+              )
+            : current.tasks,
         checkIns: [data as CheckIn, ...current.checkIns],
       }));
     } else {
@@ -427,12 +451,19 @@ export default function IndexScreen() {
             ? { ...entry, last_checked_at: newestCheckIn, updated_at: nowIso() }
             : entry
         ),
-        tasks: current.tasks,
+        tasks:
+          linkedTask && completeLinkedTask
+            ? current.tasks.map((task) =>
+                task.id === linkedTask.id
+                  ? { ...task, status: "done", completed_at: completedAt, updated_at: nowIso() }
+                  : task
+              )
+            : current.tasks,
         checkIns: [{ id: localId("checkin"), ...payload }, ...current.checkIns],
       }));
     }
 
-    setMessage("Check-in logged.");
+    setMessage(linkedTask ? "Task completed and check-in logged." : "Check-in logged.");
   }
 
   async function togglePause(project: Project) {
@@ -696,6 +727,9 @@ export default function IndexScreen() {
                   }
                   onAddTask={() => addTask(project)}
                   onToggleTask={toggleTask}
+                  onTaskCheckIn={(task) =>
+                    createCheckIn(project, nowIso(), "Task completed", task, true)
+                  }
                   onCheckIn={() => createCheckIn(project)}
                   onRetroCheckIn={() =>
                     createCheckIn(project, daysAgoIso(1), "Retroactive check-in")
@@ -729,6 +763,9 @@ export default function IndexScreen() {
                     }
                     onAddTask={() => addTask(project)}
                     onToggleTask={toggleTask}
+                    onTaskCheckIn={(task) =>
+                      createCheckIn(project, nowIso(), "Task completed", task, true)
+                    }
                     onCheckIn={() => createCheckIn(project)}
                     onRetroCheckIn={() =>
                       createCheckIn(project, daysAgoIso(1), "Retroactive check-in")
@@ -860,6 +897,7 @@ function ProjectCard({
   setNewTaskTitle,
   onAddTask,
   onToggleTask,
+  onTaskCheckIn,
   onCheckIn,
   onRetroCheckIn,
   onPause,
@@ -872,6 +910,7 @@ function ProjectCard({
   setNewTaskTitle: (title: string) => void;
   onAddTask: () => void;
   onToggleTask: (task: Task) => void;
+  onTaskCheckIn: (task: Task) => void;
   onCheckIn: () => void;
   onRetroCheckIn: () => void;
   onPause: () => void;
@@ -921,7 +960,12 @@ function ProjectCard({
         <Text style={styles.kicker}>Tasks</Text>
         {openTasks.length === 0 ? <Text style={styles.muted}>No open tasks.</Text> : null}
         {openTasks.map((task) => (
-          <TaskRow key={task.id} task={task} onToggle={() => onToggleTask(task)} />
+          <TaskRow
+            key={task.id}
+            task={task}
+            onToggle={() => onToggleTask(task)}
+            onCheckIn={() => onTaskCheckIn(task)}
+          />
         ))}
         {completedTasks.length > 0 ? (
           <Text style={styles.muted}>{completedTasks.length} completed task(s)</Text>
@@ -942,25 +986,44 @@ function ProjectCard({
         {checkIns.length === 0 ? (
           <Text style={styles.muted}>No check-ins yet.</Text>
         ) : (
-          checkIns.slice(0, 3).map((entry) => (
-            <Text key={entry.id} style={styles.muted}>
-              {formatDateTime(entry.occurred_at)} - {entry.note ?? "Check-in"}
-            </Text>
-          ))
+          checkIns.slice(0, 3).map((entry) => {
+            const linkedTask = tasks.find((task) => task.id === entry.task_id);
+            return (
+              <Text key={entry.id} style={styles.muted}>
+                {formatDateTime(entry.occurred_at)} - {entry.note ?? "Check-in"}
+                {linkedTask ? ` (${linkedTask.title})` : ""}
+              </Text>
+            );
+          })
         )}
       </View>
     </View>
   );
 }
 
-function TaskRow({ task, onToggle }: { task: Task; onToggle: () => void }) {
+function TaskRow({
+  task,
+  onToggle,
+  onCheckIn,
+}: {
+  task: Task;
+  onToggle: () => void;
+  onCheckIn: () => void;
+}) {
   return (
-    <Pressable onPress={onToggle} style={styles.taskRow}>
-      <View style={[styles.checkbox, task.status === "done" && styles.checkboxActive]} />
-      <Text style={[styles.taskText, task.status === "done" && styles.taskTextDone]}>
-        {task.title}
-      </Text>
-    </Pressable>
+    <View style={styles.taskRow}>
+      <Pressable onPress={onToggle} style={styles.taskToggle}>
+        <View style={[styles.checkbox, task.status === "done" && styles.checkboxActive]} />
+        <Text style={[styles.taskText, task.status === "done" && styles.taskTextDone]}>
+          {task.title}
+        </Text>
+      </Pressable>
+      {task.status === "open" ? (
+        <Pressable onPress={onCheckIn} style={styles.taskCheckInButton}>
+          <Text style={styles.taskCheckInText}>Done + check-in</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -1311,7 +1374,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 9,
+    justifyContent: "space-between",
     paddingVertical: 5,
+  },
+  taskToggle: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: 9,
+    minHeight: 34,
   },
   taskText: {
     color: "#292524",
@@ -1321,6 +1392,18 @@ const styles = StyleSheet.create({
   taskTextDone: {
     color: "#a8a29e",
     textDecorationLine: "line-through",
+  },
+  taskCheckInButton: {
+    borderColor: "#a7f3d0",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  taskCheckInText: {
+    color: "#047857",
+    fontSize: 12,
+    fontWeight: "800",
   },
   inlineTask: {
     alignItems: "center",

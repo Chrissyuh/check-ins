@@ -53,7 +53,7 @@ export function createPreviewWorkspace(): WorkspaceData {
     makePreviewTask(projectB.id, "Clear one shelf", "open", 1),
   ];
   const checkIns: CheckIn[] = [
-    makePreviewCheckIn(projectA.id, "Worked on outline", daysAgoIso(1)),
+    makePreviewCheckIn(projectA.id, "Task completed", daysAgoIso(1), tasks[0].id),
     makePreviewCheckIn(projectB.id, "Sorted tools", daysAgoIso(10)),
   ];
 
@@ -82,12 +82,17 @@ function makePreviewTask(
   };
 }
 
-function makePreviewCheckIn(projectId: string, note: string, occurredAt: string): CheckIn {
+function makePreviewCheckIn(
+  projectId: string,
+  note: string,
+  occurredAt: string,
+  taskId: string | null = null
+): CheckIn {
   return {
     id: localId("checkin"),
     user_id: localUserId,
     project_id: projectId,
-    task_id: null,
+    task_id: taskId,
     note,
     occurred_at: occurredAt,
     created_at: occurredAt,

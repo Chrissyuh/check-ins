@@ -1,6 +1,6 @@
 # Check-ins
 
-Cross-platform mobile/web app for Check-ins: a to-do app with project freshness, next actions, check-ins, accounts, and sync.
+Cross-platform mobile/web app for Check-ins: a to-do app with project freshness, next actions, check-ins, accounts, and sync. Items can be to-do only, check-in only, or both.
 
 ## Product Rules
 
@@ -32,7 +32,7 @@ npm run ios
 ## Supabase Setup
 
 1. Create a Supabase project.
-2. Run `supabase/migrations/20260603000000_v2_schema.sql`.
+2. Run every SQL file in `supabase/migrations` in timestamp order.
 3. Copy `.env.example` to `.env.local`.
 4. Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`.
 5. Deploy `supabase/functions/delete-account`.

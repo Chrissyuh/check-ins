@@ -10,7 +10,7 @@ A to-do list that remembers when you last touched long-term projects.
 
 ## Full Description
 
-Check-ins combines a to-do list with long-term project tracking. Add projects, choose how often you want to touch them, keep a next action ready, and check in when you make progress.
+Check-ins combines a to-do list with long-term project tracking. Add items as to-do tasks, check-in tasks, or both, choose how often you want to touch long-term work, keep a next action ready, and check in when you make progress.
 
 Instead of letting important projects disappear into a stale task list, Check-ins shows what is fresh, due, or over your max gap. It is designed for creative projects, home projects, habits, learning, maintenance tasks, and anything that matters over time.
 
@@ -33,7 +33,7 @@ Provide reviewers a demo account after the production Supabase project is config
 ## Screenshot Checklist
 
 - Today view with due projects.
-- Projects view with task list and check-in actions.
+- Items view with to-do-only, check-in-only, and combined items.
 - Project card showing next action and logbook.
 - Settings showing Privacy Policy, Support, Clear workspace, Delete account.
 - Sign-in screen.

@@ -26,15 +26,30 @@ import {
   supportUrl,
   type AuthSession,
 } from "../src/supabase";
-import type { CheckIn, DurationUnit, Project, Task, WorkspaceData } from "../src/types";
+import type { CheckIn, DurationUnit, Project, Task, TrackingMode, WorkspaceData } from "../src/types";
 
 const PREVIEW_STORAGE_KEY = "checkins.v2.preview.workspace";
 const localUserId = "local-preview";
+
+function getTrackingMode(project: Project): TrackingMode {
+  return project.tracking_mode ?? "both";
+}
+
+function allowsTasks(item: Project | TrackingMode): boolean {
+  const mode = typeof item === "string" ? item : getTrackingMode(item);
+  return mode === "todo" || mode === "both";
+}
+
+function allowsCheckIns(item: Project | TrackingMode): boolean {
+  const mode = typeof item === "string" ? item : getTrackingMode(item);
+  return mode === "checkin" || mode === "both";
+}
 
 type Tab = "today" | "projects" | "completed" | "settings";
 type AuthMode = "signin" | "signup";
 type ProjectDraft = {
   title: string;
+  trackingMode: TrackingMode;
   nextAction: string;
   notes: string;
   targetAmount: string;
@@ -46,6 +61,7 @@ type ProjectDraft = {
 
 const initialProjectDraft: ProjectDraft = {
   title: "",
+  trackingMode: "both",
   nextAction: "",
   notes: "",
   targetAmount: "2",
@@ -130,7 +146,15 @@ export default function IndexScreen() {
         .sort((a, b) => {
           const statusA = getProjectStatus(a);
           const statusB = getProjectStatus(b);
-          const rank = { "over-max": 0, due: 1, soon: 2, fresh: 3, paused: 4, completed: 5 };
+          const rank = {
+            "over-max": 0,
+            due: 1,
+            soon: 2,
+            todo: 3,
+            fresh: 4,
+            paused: 5,
+            completed: 6,
+          };
           return rank[statusA.status] - rank[statusB.status] || a.sort_order - b.sort_order;
         }),
     [workspace.projects]
@@ -143,17 +167,29 @@ export default function IndexScreen() {
     () =>
       activeProjects.filter((project) => {
         const status = getProjectStatus(project);
-        return status.status === "due" || status.status === "over-max" || status.status === "soon";
+        const hasOpenTasks = workspace.tasks.some(
+          (task) => task.project_id === project.id && task.status === "open"
+        );
+        const checkInNeedsAttention =
+          allowsCheckIns(project) &&
+          (status.status === "due" || status.status === "over-max" || status.status === "soon");
+        const taskNeedsAttention = allowsTasks(project) && hasOpenTasks;
+        return checkInNeedsAttention || taskNeedsAttention;
       }),
-    [activeProjects]
+    [activeProjects, workspace.tasks]
   );
   const stats = useMemo(() => {
     const statuses = activeProjects.map((project) => getProjectStatus(project));
+    const taskProjectIds = new Set(
+      activeProjects.filter((project) => allowsTasks(project)).map((project) => project.id)
+    );
     return {
       active: activeProjects.length,
       due: statuses.filter((status) => status.status === "due").length,
       overMax: statuses.filter((status) => status.status === "over-max").length,
-      tasks: workspace.tasks.filter((task) => task.status === "open").length,
+      tasks: workspace.tasks.filter(
+        (task) => task.status === "open" && taskProjectIds.has(task.project_id)
+      ).length,
       checkIns: workspace.checkIns.length,
     };
   }, [activeProjects, workspace.checkIns.length, workspace.tasks]);
@@ -252,18 +288,20 @@ export default function IndexScreen() {
 
   async function addProject() {
     const title = projectDraft.title.trim();
+    const canTrackTasks = allowsTasks(projectDraft.trackingMode);
+    const canTrackCheckIns = allowsCheckIns(projectDraft.trackingMode);
     const targetAmount = Number(projectDraft.targetAmount);
     const maxAmount = Number(projectDraft.maxAmount);
 
     if (!title) {
-      setMessage("Project name is required.");
+      setMessage("Item name is required.");
       return;
     }
-    if (!targetAmount || targetAmount < 1) {
+    if (canTrackCheckIns && (!targetAmount || targetAmount < 1)) {
       setMessage("Target gap must be at least 1 day.");
       return;
     }
-    if (projectDraft.maxEnabled && (!maxAmount || maxAmount <= targetAmount)) {
+    if (canTrackCheckIns && projectDraft.maxEnabled && (!maxAmount || maxAmount <= targetAmount)) {
       setMessage("Max gap must be longer than the target gap.");
       return;
     }
@@ -273,12 +311,13 @@ export default function IndexScreen() {
       user_id: userId,
       title,
       notes: projectDraft.notes.trim() || null,
-      next_action: projectDraft.nextAction.trim() || null,
-      target_amount: targetAmount,
+      next_action: canTrackTasks ? projectDraft.nextAction.trim() || null : null,
+      tracking_mode: projectDraft.trackingMode,
+      target_amount: canTrackCheckIns ? targetAmount : Number(initialProjectDraft.targetAmount),
       target_unit: projectDraft.targetUnit,
-      max_enabled: projectDraft.maxEnabled,
-      max_amount: projectDraft.maxEnabled ? maxAmount : null,
-      max_unit: projectDraft.maxEnabled ? projectDraft.maxUnit : null,
+      max_enabled: canTrackCheckIns ? projectDraft.maxEnabled : false,
+      max_amount: canTrackCheckIns && projectDraft.maxEnabled ? maxAmount : null,
+      max_unit: canTrackCheckIns && projectDraft.maxEnabled ? projectDraft.maxUnit : null,
       last_checked_at: timestamp,
       paused_at: null,
       completed_at: null,
@@ -291,7 +330,7 @@ export default function IndexScreen() {
     if (isRemote && supabase) {
       const { data, error } = await supabase.from("projects").insert(payload).select("*").single();
       if (error || !data) {
-        setMessage(error?.message ?? "Could not create project.");
+        setMessage(error?.message ?? "Could not create item.");
         return;
       }
       setWorkspace((current) => ({ ...current, projects: [data as Project, ...current.projects] }));
@@ -304,7 +343,7 @@ export default function IndexScreen() {
 
     setProjectDraft(initialProjectDraft);
     setActiveTab("projects");
-    setMessage("Project added.");
+    setMessage("Item added.");
   }
 
   async function patchProject(project: Project, patch: Partial<Project>) {
@@ -327,6 +366,11 @@ export default function IndexScreen() {
   }
 
   async function addTask(project: Project) {
+    if (!allowsTasks(project)) {
+      setMessage("This item is check-in only.");
+      return;
+    }
+
     const title = (newTaskTitles[project.id] ?? "").trim();
     if (!title) return;
 
@@ -390,6 +434,15 @@ export default function IndexScreen() {
     linkedTask: Task | null = null,
     completeLinkedTask = false
   ) {
+    if (!allowsCheckIns(project)) {
+      setMessage("This item is task-only.");
+      return;
+    }
+    if (linkedTask && !allowsTasks(project)) {
+      setMessage("This item does not have tasks.");
+      return;
+    }
+
     const completedAt = completeLinkedTask ? nowIso() : null;
     const payload = {
       user_id: userId,
@@ -467,6 +520,11 @@ export default function IndexScreen() {
   }
 
   async function togglePause(project: Project) {
+    if (!allowsCheckIns(project)) {
+      setMessage("Task-only items do not have a check-in timer.");
+      return;
+    }
+
     if (project.paused_at) {
       const pausedMs = Date.now() - new Date(project.paused_at).getTime();
       const shiftedLastCheckedAt = new Date(
@@ -701,7 +759,7 @@ export default function IndexScreen() {
                 {tab === "today"
                   ? "Today"
                   : tab === "projects"
-                  ? "Projects"
+                  ? "Items"
                   : tab === "completed"
                   ? "Done"
                   : "Settings"}
@@ -713,7 +771,7 @@ export default function IndexScreen() {
         {activeTab === "today" ? (
           <Section title="Today">
             {todayProjects.length === 0 ? (
-              <EmptyText text="Nothing is due yet. Add a next action or check in when you touch a project." />
+              <EmptyText text="Nothing needs attention yet. Add a next action or check in when you touch an item." />
             ) : (
               todayProjects.map((project) => (
                 <ProjectCard
@@ -744,12 +802,12 @@ export default function IndexScreen() {
 
         {activeTab === "projects" ? (
           <>
-            <Section title="Add project">
+            <Section title="Add item">
               <ProjectForm draft={projectDraft} setDraft={setProjectDraft} onSubmit={addProject} />
             </Section>
-            <Section title="Active projects">
+            <Section title="Active items">
               {activeProjects.length === 0 ? (
-                <EmptyText text="Add a project to start tracking work and next actions." />
+                <EmptyText text="Add an item to start tracking work and next actions." />
               ) : (
                 activeProjects.map((project) => (
                   <ProjectCard
@@ -782,7 +840,7 @@ export default function IndexScreen() {
         {activeTab === "completed" ? (
           <Section title="Completed">
             {completedProjects.length === 0 ? (
-              <EmptyText text="Completed projects will appear here with their check-in history preserved." />
+              <EmptyText text="Completed items will appear here with their check-in history preserved." />
             ) : (
               completedProjects.map((project) => (
                 <View key={project.id} style={styles.card}>
@@ -832,20 +890,29 @@ function ProjectForm({
   setDraft: (draft: ProjectDraft) => void;
   onSubmit: () => void;
 }) {
+  const canTrackTasks = allowsTasks(draft.trackingMode);
+  const canTrackCheckIns = allowsCheckIns(draft.trackingMode);
+
   return (
     <View style={styles.formGrid}>
       <TextInput
         value={draft.title}
         onChangeText={(title) => setDraft({ ...draft, title })}
-        placeholder="Project name"
+        placeholder="Item name"
         style={styles.input}
       />
-      <TextInput
-        value={draft.nextAction}
-        onChangeText={(nextAction) => setDraft({ ...draft, nextAction })}
-        placeholder="Next action"
-        style={styles.input}
+      <TrackingModeToggle
+        value={draft.trackingMode}
+        onChange={(trackingMode) => setDraft({ ...draft, trackingMode })}
       />
+      {canTrackTasks ? (
+        <TextInput
+          value={draft.nextAction}
+          onChangeText={(nextAction) => setDraft({ ...draft, nextAction })}
+          placeholder="Next action"
+          style={styles.input}
+        />
+      ) : null}
       <TextInput
         value={draft.notes}
         onChangeText={(notes) => setDraft({ ...draft, notes })}
@@ -853,38 +920,42 @@ function ProjectForm({
         multiline
         style={[styles.input, styles.textArea]}
       />
-      <View style={styles.inline}>
-        <NumberInput
-          label="Target"
-          value={draft.targetAmount}
-          onChange={(targetAmount) => setDraft({ ...draft, targetAmount })}
-        />
-        <UnitToggle
-          value={draft.targetUnit}
-          onChange={(targetUnit) => setDraft({ ...draft, targetUnit })}
-        />
-      </View>
-      <View style={styles.inline}>
-        <NumberInput
-          label="Max"
-          value={draft.maxAmount}
-          onChange={(maxAmount) => setDraft({ ...draft, maxAmount })}
-          disabled={!draft.maxEnabled}
-        />
-        <UnitToggle
-          value={draft.maxUnit}
-          onChange={(maxUnit) => setDraft({ ...draft, maxUnit })}
-          disabled={!draft.maxEnabled}
-        />
-      </View>
-      <Pressable
-        onPress={() => setDraft({ ...draft, maxEnabled: !draft.maxEnabled })}
-        style={styles.checkboxRow}
-      >
-        <View style={[styles.checkbox, draft.maxEnabled && styles.checkboxActive]} />
-        <Text style={styles.body}>Use max gap</Text>
-      </Pressable>
-      <Button label="Add project" onPress={onSubmit} />
+      {canTrackCheckIns ? (
+        <>
+          <View style={styles.inline}>
+            <NumberInput
+              label="Target"
+              value={draft.targetAmount}
+              onChange={(targetAmount) => setDraft({ ...draft, targetAmount })}
+            />
+            <UnitToggle
+              value={draft.targetUnit}
+              onChange={(targetUnit) => setDraft({ ...draft, targetUnit })}
+            />
+          </View>
+          <View style={styles.inline}>
+            <NumberInput
+              label="Max"
+              value={draft.maxAmount}
+              onChange={(maxAmount) => setDraft({ ...draft, maxAmount })}
+              disabled={!draft.maxEnabled}
+            />
+            <UnitToggle
+              value={draft.maxUnit}
+              onChange={(maxUnit) => setDraft({ ...draft, maxUnit })}
+              disabled={!draft.maxEnabled}
+            />
+          </View>
+          <Pressable
+            onPress={() => setDraft({ ...draft, maxEnabled: !draft.maxEnabled })}
+            style={styles.checkboxRow}
+          >
+            <View style={[styles.checkbox, draft.maxEnabled && styles.checkboxActive]} />
+            <Text style={styles.body}>Use max gap</Text>
+          </Pressable>
+        </>
+      ) : null}
+      <Button label="Add item" onPress={onSubmit} />
     </View>
   );
 }
@@ -917,28 +988,40 @@ function ProjectCard({
   onComplete: () => void;
 }) {
   const computed = getProjectStatus(project);
-  const openTasks = tasks.filter((task) => task.status === "open");
-  const completedTasks = tasks.filter((task) => task.status === "done");
+  const mode = getTrackingMode(project);
+  const hasTasks = allowsTasks(mode);
+  const hasCheckIns = allowsCheckIns(mode);
+  const modeLabel =
+    mode === "both" ? "To-do + check-in" : mode === "todo" ? "To-do item" : "Check-in item";
+  const visibleTasks = hasTasks ? tasks : [];
+  const visibleCheckIns = hasCheckIns ? checkIns : [];
+  const openTasks = visibleTasks.filter((task) => task.status === "open");
+  const completedTasks = visibleTasks.filter((task) => task.status === "done");
+  const subtitle = hasCheckIns
+    ? `${modeLabel} - ${formatDuration(computed.elapsedMs)} since last touch`
+    : `${modeLabel} - ${openTasks.length} open task(s)`;
 
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <View style={styles.cardTitleWrap}>
           <Text style={styles.cardTitle}>{project.title}</Text>
-          <Text style={styles.muted}>
-            {formatDuration(computed.elapsedMs)} since last touch
-          </Text>
+          <Text style={styles.muted}>{subtitle}</Text>
         </View>
         <StatusPill label={computed.label} tone={computed.tone} />
       </View>
 
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${computed.progress * 100}%` }]} />
-      </View>
-      <Text style={styles.body}>{computed.targetText}</Text>
-      <Text style={styles.muted}>{computed.maxText}</Text>
+      {hasCheckIns ? (
+        <>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${computed.progress * 100}%` }]} />
+          </View>
+          <Text style={styles.body}>{computed.targetText}</Text>
+          <Text style={styles.muted}>{computed.maxText}</Text>
+        </>
+      ) : null}
 
-      {project.next_action ? (
+      {hasTasks && project.next_action ? (
         <View style={styles.nextAction}>
           <Text style={styles.kicker}>Next action</Text>
           <Text style={styles.nextActionText}>{project.next_action}</Text>
@@ -946,67 +1029,82 @@ function ProjectCard({
       ) : null}
 
       <View style={styles.actions}>
-        <Button
-          label={computed.canCheckIn ? "Check in" : computed.cooldownText ?? "Check in"}
-          onPress={onCheckIn}
-          disabled={!computed.canCheckIn || Boolean(project.paused_at)}
-        />
-        <Button label="Yesterday" kind="secondary" onPress={onRetroCheckIn} />
-        <Button label={project.paused_at ? "Resume" : "Pause"} kind="secondary" onPress={onPause} />
+        {hasCheckIns ? (
+          <>
+            <Button
+              label={computed.canCheckIn ? "Check in" : computed.cooldownText ?? "Check in"}
+              onPress={onCheckIn}
+              disabled={!computed.canCheckIn || Boolean(project.paused_at)}
+            />
+            <Button label="Yesterday" kind="secondary" onPress={onRetroCheckIn} />
+            <Button
+              label={project.paused_at ? "Resume" : "Pause"}
+              kind="secondary"
+              onPress={onPause}
+            />
+          </>
+        ) : null}
         <Button label="Complete" kind="ghost" onPress={onComplete} />
       </View>
 
-      <View style={styles.taskBlock}>
-        <Text style={styles.kicker}>Tasks</Text>
-        {openTasks.length === 0 ? <Text style={styles.muted}>No open tasks.</Text> : null}
-        {openTasks.map((task) => (
-          <TaskRow
-            key={task.id}
-            task={task}
-            onToggle={() => onToggleTask(task)}
-            onCheckIn={() => onTaskCheckIn(task)}
-          />
-        ))}
-        {completedTasks.length > 0 ? (
-          <Text style={styles.muted}>{completedTasks.length} completed task(s)</Text>
-        ) : null}
-        <View style={styles.inlineTask}>
-          <TextInput
-            value={newTaskTitle}
-            onChangeText={setNewTaskTitle}
-            placeholder="Add a task"
-            style={[styles.input, styles.taskInput]}
-          />
-          <Button label="Add" kind="secondary" onPress={onAddTask} />
+      {hasTasks ? (
+        <View style={styles.taskBlock}>
+          <Text style={styles.kicker}>Tasks</Text>
+          {openTasks.length === 0 ? <Text style={styles.muted}>No open tasks.</Text> : null}
+          {openTasks.map((task) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              canCheckInTask={hasCheckIns}
+              onToggle={() => onToggleTask(task)}
+              onCheckIn={() => onTaskCheckIn(task)}
+            />
+          ))}
+          {completedTasks.length > 0 ? (
+            <Text style={styles.muted}>{completedTasks.length} completed task(s)</Text>
+          ) : null}
+          <View style={styles.inlineTask}>
+            <TextInput
+              value={newTaskTitle}
+              onChangeText={setNewTaskTitle}
+              placeholder="Add a task"
+              style={[styles.input, styles.taskInput]}
+            />
+            <Button label="Add" kind="secondary" onPress={onAddTask} />
+          </View>
         </View>
-      </View>
+      ) : null}
 
-      <View style={styles.logbook}>
-        <Text style={styles.kicker}>Logbook</Text>
-        {checkIns.length === 0 ? (
-          <Text style={styles.muted}>No check-ins yet.</Text>
-        ) : (
-          checkIns.slice(0, 3).map((entry) => {
-            const linkedTask = tasks.find((task) => task.id === entry.task_id);
-            return (
-              <Text key={entry.id} style={styles.muted}>
-                {formatDateTime(entry.occurred_at)} - {entry.note ?? "Check-in"}
-                {linkedTask ? ` (${linkedTask.title})` : ""}
-              </Text>
-            );
-          })
-        )}
-      </View>
+      {hasCheckIns ? (
+        <View style={styles.logbook}>
+          <Text style={styles.kicker}>Logbook</Text>
+          {visibleCheckIns.length === 0 ? (
+            <Text style={styles.muted}>No check-ins yet.</Text>
+          ) : (
+            visibleCheckIns.slice(0, 3).map((entry) => {
+              const linkedTask = tasks.find((task) => task.id === entry.task_id);
+              return (
+                <Text key={entry.id} style={styles.muted}>
+                  {formatDateTime(entry.occurred_at)} - {entry.note ?? "Check-in"}
+                  {linkedTask ? ` (${linkedTask.title})` : ""}
+                </Text>
+              );
+            })
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }
 
 function TaskRow({
   task,
+  canCheckInTask,
   onToggle,
   onCheckIn,
 }: {
   task: Task;
+  canCheckInTask: boolean;
   onToggle: () => void;
   onCheckIn: () => void;
 }) {
@@ -1018,7 +1116,7 @@ function TaskRow({
           {task.title}
         </Text>
       </Pressable>
-      {task.status === "open" ? (
+      {canCheckInTask && task.status === "open" ? (
         <Pressable onPress={onCheckIn} style={styles.taskCheckInButton}>
           <Text style={styles.taskCheckInText}>Done + check-in</Text>
         </Pressable>
@@ -1060,12 +1158,13 @@ function StatusPill({
   tone,
 }: {
   label: string;
-  tone: "fresh" | "soon" | "due" | "danger" | "paused" | "completed";
+  tone: "todo" | "fresh" | "soon" | "due" | "danger" | "paused" | "completed";
 }) {
   return (
     <View
       style={[
         styles.pill,
+        tone === "todo" && styles.pillTodo,
         tone === "due" && styles.pillDue,
         tone === "danger" && styles.pillDanger,
         tone === "paused" && styles.pillPaused,
@@ -1073,6 +1172,39 @@ function StatusPill({
       ]}
     >
       <Text style={styles.pillText}>{label}</Text>
+    </View>
+  );
+}
+
+function TrackingModeToggle({
+  value,
+  onChange,
+}: {
+  value: TrackingMode;
+  onChange: (value: TrackingMode) => void;
+}) {
+  const options: { value: TrackingMode; label: string }[] = [
+    { value: "todo", label: "To-do" },
+    { value: "checkin", label: "Check-in" },
+    { value: "both", label: "Both" },
+  ];
+
+  return (
+    <View style={styles.modeGroup}>
+      <Text style={styles.kicker}>Item type</Text>
+      <View style={styles.modeToggle}>
+        {options.map((option) => (
+          <Pressable
+            key={option.value}
+            onPress={() => onChange(option.value)}
+            style={[styles.modeButton, value === option.value && styles.modeButtonActive]}
+          >
+            <Text style={[styles.modeText, value === option.value && styles.modeTextActive]}>
+              {option.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
@@ -1424,6 +1556,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
+  pillTodo: {
+    backgroundColor: "#f5f5f4",
+    borderColor: "#d6d3d1",
+  },
   pillDue: {
     backgroundColor: "#fffbeb",
     borderColor: "#fde68a",
@@ -1452,6 +1588,37 @@ const styles = StyleSheet.create({
   },
   formGrid: {
     gap: 10,
+  },
+  modeGroup: {
+    gap: 6,
+  },
+  modeToggle: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  modeButton: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#d6d3d1",
+    borderRadius: 13,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  modeButtonActive: {
+    backgroundColor: "#0c0a09",
+    borderColor: "#0c0a09",
+  },
+  modeText: {
+    color: "#57534e",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  modeTextActive: {
+    color: "#ffffff",
   },
   input: {
     backgroundColor: "#ffffff",

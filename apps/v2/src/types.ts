@@ -1,5 +1,13 @@
 export type DurationUnit = "days" | "weeks";
-export type ProjectStatus = "fresh" | "soon" | "due" | "over-max" | "paused" | "completed";
+export type TrackingMode = "todo" | "checkin" | "both";
+export type ProjectStatus =
+  | "todo"
+  | "fresh"
+  | "soon"
+  | "due"
+  | "over-max"
+  | "paused"
+  | "completed";
 export type TaskStatus = "open" | "done" | "archived";
 export type TaskPriority = "low" | "normal" | "high";
 
@@ -9,6 +17,7 @@ export type Project = {
   title: string;
   notes: string | null;
   next_action: string | null;
+  tracking_mode: TrackingMode;
   target_amount: number;
   target_unit: DurationUnit;
   max_enabled: boolean;
@@ -75,7 +84,7 @@ export type WorkspaceData = {
 export type ComputedStatus = {
   status: ProjectStatus;
   label: string;
-  tone: "fresh" | "soon" | "due" | "danger" | "paused" | "completed";
+  tone: "todo" | "fresh" | "soon" | "due" | "danger" | "paused" | "completed";
   elapsedMs: number;
   targetText: string;
   maxText: string;

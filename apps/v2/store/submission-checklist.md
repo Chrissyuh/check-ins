@@ -9,7 +9,7 @@
 
 ## Supabase
 
-- Run `supabase/migrations/20260603000000_v2_schema.sql`.
+- Run every SQL file in `supabase/migrations` in timestamp order.
 - Deploy `supabase/functions/delete-account`.
 - Set `SUPABASE_SERVICE_ROLE_KEY` for the Edge Function.
 - Configure redirect URLs for web and `checkinsv2://`.

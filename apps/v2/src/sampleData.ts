@@ -15,6 +15,7 @@ export function createPreviewWorkspace(): WorkspaceData {
     title: "Portfolio case study",
     notes: "Turn the launched V1 into a clear write-up.",
     next_action: "Draft the before/after section",
+    tracking_mode: "both",
     target_amount: 2,
     target_unit: "days",
     max_enabled: true,
@@ -33,7 +34,8 @@ export function createPreviewWorkspace(): WorkspaceData {
     user_id: localUserId,
     title: "Garage cleanup",
     notes: "A recurring project that should not vanish from memory.",
-    next_action: "Clear one shelf",
+    next_action: null,
+    tracking_mode: "checkin",
     target_amount: 1,
     target_unit: "weeks",
     max_enabled: true,
@@ -47,17 +49,37 @@ export function createPreviewWorkspace(): WorkspaceData {
     created_at: daysAgoIso(30),
     updated_at: now,
   };
+  const projectC: Project = {
+    id: localId("project"),
+    user_id: localUserId,
+    title: "Renew passport",
+    notes: "A one-off task that does not need a check-in cadence.",
+    next_action: "Find current passport",
+    tracking_mode: "todo",
+    target_amount: 2,
+    target_unit: "days",
+    max_enabled: false,
+    max_amount: null,
+    max_unit: null,
+    last_checked_at: now,
+    paused_at: null,
+    completed_at: null,
+    archived_at: null,
+    sort_order: 3,
+    created_at: daysAgoIso(2),
+    updated_at: now,
+  };
   const tasks: Task[] = [
     makePreviewTask(projectA.id, "Collect screenshots", "done", 1),
     makePreviewTask(projectA.id, "Draft the before/after section", "open", 2),
-    makePreviewTask(projectB.id, "Clear one shelf", "open", 1),
+    makePreviewTask(projectC.id, "Find current passport", "open", 1),
   ];
   const checkIns: CheckIn[] = [
     makePreviewCheckIn(projectA.id, "Task completed", daysAgoIso(1), tasks[0].id),
     makePreviewCheckIn(projectB.id, "Sorted tools", daysAgoIso(10)),
   ];
 
-  return { projects: [projectA, projectB], tasks, checkIns };
+  return { projects: [projectA, projectB, projectC], tasks, checkIns };
 }
 
 function makePreviewTask(

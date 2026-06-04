@@ -20,6 +20,20 @@ export function getProjectStatus(project: Project, nowMs = Date.now()): Computed
     };
   }
 
+  if (project.tracking_mode === "todo") {
+    return {
+      status: "todo",
+      label: "To-do",
+      tone: "todo",
+      elapsedMs: 0,
+      targetText: "Task-only item",
+      maxText: "No check-in cadence",
+      progress: 0,
+      canCheckIn: false,
+      cooldownText: null,
+    };
+  }
+
   if (project.paused_at) {
     return {
       status: "paused",
